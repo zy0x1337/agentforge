@@ -1,0 +1,55 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# Icon Generator
+# Runs when icon.svg changes on main.
+# Regenerates all raster sizes via the Tauri CLI and commits them back.
+# ───────────────────────────────────────────────────────────────────────────────
+name: Icon Generator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/icons/icon.svg'
+
+jobs:
+  generate-icons:
+    name: Regenerate icon rasters
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Install ImageMagick for .ico and .icns conversion
+      - name: Install ImageMagick
+        run: sudo apt-get install -y imagemagick
+
+      - name: Generate icon rasters
+        run: pnpm tauri icon src-tauri/icons/icon.svg
+
+      - name: Commit updated icons
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'chore(icons): regenerate raster icons from icon.svg [skip ci]'
+          file_pattern: 'src-tauri/icons/*.png src-tauri/icons/*.ico src-tauri/icons/*.icns'
+          commit_user_name: 'github-actions[bot]'
+          commit_user_email: 'github-actions[bot]@users.noreply.github.com'

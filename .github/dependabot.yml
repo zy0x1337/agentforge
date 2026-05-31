@@ -1,0 +1,60 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# Dependabot — weekly automated dependency updates
+# ───────────────────────────────────────────────────────────────────────────────
+version: 2
+
+updates:
+  # GitHub Actions
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/Berlin'
+    labels: ['dependencies', 'github-actions']
+    commit-message:
+      prefix: 'ci'
+
+  # npm (frontend)
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/Berlin'
+    labels: ['dependencies', 'javascript']
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['@tauri-apps/*']
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      vite:
+        patterns: ['vite', '@vitejs/*']
+    commit-message:
+      prefix: 'chore(deps)'
+    ignore:
+      # Major version bumps require manual review
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+
+  # Cargo (Rust backend)
+  - package-ecosystem: 'cargo'
+    directory: '/src-tauri'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:00'
+      timezone: 'Europe/Berlin'
+    labels: ['dependencies', 'rust']
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['tauri', 'tauri-*']
+    commit-message:
+      prefix: 'chore(deps)'
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
