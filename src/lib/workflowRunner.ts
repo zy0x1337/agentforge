@@ -5,6 +5,10 @@
  *   full    → pass the full previous output as context
  *   summary → summarise previous output first (safe for long chains)
  *   none    → start fresh, only the original user prompt
+ *
+ * Abort:
+ *   Pass an AbortSignal to cancel mid-run. The runner throws an
+ *   "AbortError" which sets the run status to "aborted".
  */
 
 import { chat, chatStream } from "./ollama";
@@ -13,7 +17,11 @@ import type { Agent, WorkflowRun, WorkflowStep, ChatMessage } from "@/types";
 
 const MAX_STEPS = 8;
 
-async function summarize(text: string, model: string): Promise<string> {
+async function summarize(
+  text: string,
+  model: string,
+  signal?: AbortSignal
+): Promise<string> {
   return chat(
     model,
     [
@@ -25,7 +33,8 @@ async function summarize(text: string, model: string): Promise<string> {
       { role: "user", content: text },
     ],
     0.3,
-    512
+    512,
+    signal
   );
 }
 
@@ -61,7 +70,8 @@ export async function runWorkflow(
   routerModel: string,
   defaultModel: string,
   onStep: (step: WorkflowStep) => void,
-  onChunk: (agentId: string, token: string) => void
+  onChunk: (agentId: string, token: string) => void,
+  signal?: AbortSignal
 ): Promise<WorkflowRun> {
   const run: WorkflowRun = {
     id: crypto.randomUUID(),
@@ -71,7 +81,13 @@ export async function runWorkflow(
     status: "running",
   };
 
-  let currentAgent = await routeToAgent(initialPrompt, agents, routerModel);
+  // Immediately check if already aborted before we even start
+  if (signal?.aborted) {
+    run.status = "aborted";
+    return run;
+  }
+
+  let currentAgent = await routeToAgent(initialPrompt, agents, routerModel, signal);
   if (!currentAgent) {
     run.status = "error";
     return run;
@@ -81,13 +97,20 @@ export async function runWorkflow(
   let stepCount = 0;
 
   while (currentAgent && stepCount < MAX_STEPS) {
+    // Check abort at the top of every step
+    if (signal?.aborted) {
+      run.status = "aborted";
+      run.finishedAt = Date.now();
+      return run;
+    }
+
     stepCount++;
     const model = currentAgent.frontmatter.model || defaultModel;
     const contextMode = currentAgent.frontmatter.context_mode ?? "summary";
 
     let contextContent = previousOutput;
     if (contextContent && contextMode === "summary") {
-      contextContent = await summarize(contextContent, model);
+      contextContent = await summarize(contextContent, model, signal);
     }
 
     const messages = buildMessages(
@@ -114,7 +137,8 @@ export async function runWorkflow(
           output += token;
           onChunk(currentAgent!.id, token);
         },
-        currentAgent.frontmatter.temperature ?? 0.7
+        currentAgent.frontmatter.temperature ?? 0.7,
+        signal
       );
 
       step.output = output;
@@ -123,11 +147,25 @@ export async function runWorkflow(
       onStep({ ...step });
       run.steps.push({ ...step });
     } catch (err) {
+      const isAbort =
+        err instanceof DOMException && err.name === "AbortError";
+
+      if (isAbort) {
+        step.status = "aborted";
+        step.output = "[aborted by user]";
+        onStep({ ...step });
+        run.steps.push({ ...step });
+        run.status = "aborted";
+        run.finishedAt = Date.now();
+        return run;
+      }
+
       step.status = "error";
       step.output = String(err);
       onStep({ ...step });
       run.steps.push({ ...step });
       run.status = "error";
+      run.finishedAt = Date.now();
       return run;
     }
 
@@ -135,10 +173,12 @@ export async function runWorkflow(
       currentAgent,
       previousOutput ?? "",
       agents,
-      routerModel
+      routerModel,
+      signal
     );
   }
 
   run.status = "done";
+  run.finishedAt = Date.now();
   return run;
 }
