@@ -16,10 +16,10 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 - **Agent Explorer** — Open any folder as an agents directory; every subfolder becomes an agent defined by `.md` files with YAML frontmatter
 - **Inline MD Editor** — CodeMirror 6 split-pane editor: syntax-highlighted markdown + YAML, live preview, structured Frontmatter Panel, dirty state (`●`), `Ctrl+S` to save, per-tab revert
 - **Workflow Runner** — Enter a prompt; the router selects the best-matching agent, executes it, and passes structured output to the next agent in the chain
-- **Parallel Agent Execution** — `workflow.md` steps with `mode: parallel` run multiple agents concurrently; results are fanned back in and merged before the next sequential step
+- **Parallel Agent Execution** — `workflow.md` steps with `mode: parallel` fan out to multiple agents concurrently via `Promise.allSettled`; results merged via `concat`, `summarise`, or `vote` strategy before the next sequential step
 - **Workflow Graph** — ReactFlow canvas that visualises the agent topology in real time (animated edges, per-node status) and as a static dependency map when idle
 - **Streaming UI** — Every agent step streams output live as a chat bubble
-- **Abort / Stop** — Cancel a running workflow at any point; the current step is marked `aborted` and the run is preserved in history
+- **Abort / Stop** — Cancel a running workflow at any point; `AbortController` signal propagates through all in-flight parallel streams simultaneously
 - **Run History** — Every completed or aborted run is stored in the sidebar; clicking an entry opens the Graph panel showing that run's execution path
 - **Settings Panel** — Slide-over drawer: LLM, Agents, Routing mode, Appearance, Diagnostics. All changes persist immediately
 - **Persistent Settings** — Default model, agents directory, Ollama base URL, theme, embedding model, and routing mode saved via `tauri-plugin-store`
@@ -132,7 +132,7 @@ agentforge/
 │   │   ├── router.ts
 │   │   ├── embeddings.ts
 │   │   ├── workflowRunner.ts      # sequential execution engine
-│   │   ├── parallelRunner.ts      # parallel fan-out / fan-in engine  ← NEW
+│   │   ├── parallelRunner.ts      # parallel fan-out / fan-in engine
 │   │   ├── graphLayout.ts
 │   │   ├── hfHub.ts
 │   │   ├── quantParser.ts         # GGUF quant tag parsing + VRAM estimates
@@ -149,10 +149,10 @@ agentforge/
 │       ├── ModelManager/
 │       │   └── ModelManager.tsx
 │       ├── ModelBrowser/
-│       │   ├── QuantBadge.tsx      # coloured quant tag badge with tooltip
-│       │   ├── ProviderFilter.tsx  # provider checkbox filter
-│       │   ├── DownloadButton.tsx  # progress bar + cancel + Ollama import
-│       │   └── ModelFileTable.tsx  # sortable GGUF file table
+│       │   ├── QuantBadge.tsx
+│       │   ├── ProviderFilter.tsx
+│       │   ├── DownloadButton.tsx
+│       │   └── ModelFileTable.tsx
 │       ├── HfGgufBrowser/
 │       │   ├── HfGgufBrowser.tsx
 │       │   └── HfGgufBrowser.module.css
@@ -180,7 +180,7 @@ agentforge/
 │       ├── main.rs
 │       ├── lib.rs
 │       └── commands/
-│           └── download.rs        # stub — logic lives in lib.rs
+│           └── download.rs
 │
 └── agents/
     ├── README.md
@@ -292,6 +292,7 @@ steps:
   - agents: [coder, researcher]   # parallel group
     mode: parallel
     merge_strategy: concat         # "concat" | "summarise" | "vote"
+    timeout_ms: 90000              # per-agent timeout (default: 120 000)
   - agent: reviewer
   - agent: summarizer
 ---
@@ -324,21 +325,62 @@ Allowed shell commands with timeout (executed via Rust sidecar).
 2. **Semantic embeddings** — cosine similarity via `nomic-embed-text` (requires `Full` mode)
 3. **LLM fallback** — model picks the best-suited agent from a list
 
-### Parallel Execution
+---
 
-When a `workflow.md` step declares `mode: parallel`, the runner fans out to all listed agents concurrently using `Promise.allSettled`. Each agent receives the same input context. Results are merged according to `merge_strategy`:
+## Parallel Execution
 
-| Strategy | Behaviour |
-|---|---|
-| `concat` | Results appended in declaration order (default) |
-| `summarise` | A summariser agent condenses all results into one |
-| `vote` | Majority-vote on structured `{choice, reason}` outputs |
+### How it works
 
-Failed agents in a parallel group are logged but do not abort the run — the merge receives whatever succeeded.
+When `workflowRunner.ts` encounters a step with `mode: parallel`, it delegates to `parallelRunner.ts`. All listed agents are launched simultaneously via `Promise.allSettled` — none blocks the others.
 
-### Abort Behaviour
+```
+                     ┌─ Agent B ──────────────────── output B ─┐
+input context ───────┼─ Agent C ──────────────────── output C ─┼──→ merge ──→ next step
+                     └─ Agent D ──────────────────── output D ─┘
+                               (all run concurrently)
+```
 
-Pressing **Stop** calls `AbortController.abort()`. The signal propagates through the entire call stack including all in-flight parallel fetch streams. Each stream reader is cancelled in a `finally` block. The run is pushed to history with `status: "aborted"`.
+Each agent:
+- Uses its own `model` override (falls back to app default)
+- Gets an independently budgeted copy of the input context (token-estimated, tail-preserved)
+- Has its own per-agent `timeout_ms` deadline (default 120 s)
+- Streams tokens live to the chat panel via `onToken(agentId, token)`
+
+### Merge strategies
+
+| Strategy | Behaviour | Best for |
+|---|---|---|
+| `concat` *(default)* | Outputs appended in declaration order under `### agentId` headers | Code + docs, multi-section reports |
+| `summarise` | A lightweight LLM call condenses all results into a single synthesis | Long parallel outputs, research aggregation |
+| `vote` | Agents return `{ choice, reason }` JSON; majority choice wins | Classification, decision tasks, A/B selection |
+
+### Error isolation
+
+Failed, timed-out, or aborted agents in a parallel group **do not abort the run**. `Promise.allSettled` ensures all lanes are awaited. The merge receives results from whichever agents succeeded. Each result carries a `status` field:
+
+| Status | Cause |
+|--------|-------|
+| `ok` | Agent completed successfully |
+| `error` | Runtime error during execution |
+| `timeout` | Exceeded `timeout_ms` for that agent |
+| `aborted` | User pressed Stop — `AbortController` signal fired |
+
+The chat panel renders a **parallel group summary** above the merged output:
+
+```
+Parallel group — 2/3 agents succeeded · merge: concat · 4 231ms
+✅ coder — 2 104ms
+✅ researcher — 4 231ms
+❌ validator — TypeError: unexpected token
+```
+
+### Abort propagation
+
+Pressing **Stop** calls `AbortController.abort()` on the shared run signal. `parallelRunner.ts` combines each agent's per-agent timeout controller with the shared signal via `AbortSignal.any([runSignal, timeoutSignal])`. Every in-flight `fetch()` stream is cancelled in its `finally` block. The run is pushed to history with `status: "aborted"`.
+
+### Context budget
+
+To avoid overflowing context windows when the same large context is sent to many agents simultaneously, each agent receives a copy budgeted to its `max_tokens` value (default 2 048 tokens, estimated at 4 chars/token). Trimming preserves the **tail** of the context — the most recent content — and prepends `…[context trimmed]`.
 
 ---
 
@@ -431,13 +473,15 @@ cd src-tauri && cargo clippy   # Rust lints
 - [x] Inline MD editor (CodeMirror 6, Frontmatter Panel, dirty state)
 - [x] `tools.md` shell execution (Rust, allowlist, timeout)
 - [x] HF GGUF browser (search, provider filter, quant metadata, direct download, SHA-256, Ollama import)
-- [x] Parallel agent execution (fan-out / fan-in, merge strategies, abort propagation)
+- [x] Parallel agent execution (`parallelRunner.ts`: fan-out / fan-in, `Promise.allSettled`, merge strategies, abort propagation, context budgeting)
 
 **Phase 4 — Distribution** *(next)*
-- [ ] Persistent run history (saved to disk)
-- [ ] App icon + bundle metadata
-- [ ] GitHub Actions release build (`.exe` as release asset)
+- [ ] Persistent run history (saved to disk, browsable across sessions)
+- [ ] App icon + bundle metadata (version, author, description)
+- [ ] GitHub Actions release workflow (`.exe` + `.msi` as release assets)
 - [ ] Auto-updater (`tauri-plugin-updater`)
+- [ ] Onboarding wizard (first-launch: detect Ollama, pick model, set agents dir)
+- [ ] Agent Marketplace (import community agent packs from GitHub)
 
 ---
 
