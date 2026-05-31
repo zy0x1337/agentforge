@@ -1,3 +1,21 @@
+/**
+ * ChatPanel
+ *
+ * Displays the active (or selected historical) workflow run as a chat thread.
+ *
+ * State ownership after store cleanup:
+ * ─────────────────────────────────────
+ * • agents, settings          → useAppStore   (unchanged)
+ * • isRunning, activeRun,
+ *   startRun, abort, finishRun,
+ *   handleEvent               → useWorkflowStore
+ * • runs, activeRunId,
+ *   addRun, hydrateHistory    → useHistoryStore
+ *
+ * No more streamBuffer / appendStream in useAppStore.
+ * Streaming text is read directly from activeRun.steps[n].output
+ * (useWorkflowStore.handleEvent appends chunks via agent_chunk events).
+ */
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
@@ -7,43 +25,54 @@ import StopButton from "./StopButton";
 import type { Agent, WorkflowRun } from "@/types";
 
 export default function ChatPanel() {
-  const {
-    agents, settings,
-    addRunStep,
-    streamBuffer, appendStream, clearStream,
-  } = useAppStore();
+  const { agents, settings } = useAppStore();
 
-  const { isRunning, startRun, finishRun } = useWorkflowStore();
+  const {
+    activeRun,
+    isRunning,
+    startRun,
+    finishRun,
+    handleEvent,
+  } = useWorkflowStore();
+
   const { runs, activeRunId, setActiveRunId, addRun } = useHistoryStore();
 
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // The run currently displayed (active selection or latest)
+  /**
+   * Displayed run: prefer the run the user clicked in history,
+   * fall back to the live activeRun, then the most recent history entry.
+   */
   const displayRun: WorkflowRun | null =
-    runs.find((r) => r.id === activeRunId) ?? runs[0] ?? null;
+    (activeRunId ? runs.find((r) => r.id === activeRunId) : null)
+    ?? activeRun
+    ?? runs[0]
+    ?? null;
 
+  // Auto-scroll to bottom when new steps/chunks arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayRun?.steps.length, streamBuffer]);
+  }, [displayRun?.steps.length, activeRun?.steps.map((s) => s.output).join("").length]);
 
   const run = async () => {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
     const prompt = input.trim();
     setInput("");
-    clearStream();
 
-    const newRun: WorkflowRun = {
-      id: crypto.randomUUID(),
+    const runId = crypto.randomUUID();
+    const signal = startRun(runId, prompt);
+
+    // Push an in-progress placeholder to history so the panel shows immediately
+    const placeholder: WorkflowRun = {
+      id: runId,
       startedAt: Date.now(),
       initialPrompt: prompt,
       steps: [],
       status: "running",
     };
-    addRun(newRun);
-    setActiveRunId(newRun.id);
-
-    const signal = startRun();
+    await addRun(placeholder);
+    setActiveRunId(runId);
 
     try {
       const completed = await runWorkflow(
@@ -51,14 +80,13 @@ export default function ChatPanel() {
         agents,
         settings.defaultModel,
         settings.defaultModel,
-        addRunStep,
-        appendStream,
+        handleEvent,
         signal,
       );
-      // Replace the in-progress run with the finished one
-      addRun(completed);
+      // Replace placeholder with the finished run (persists to disk)
+      await addRun(completed);
     } catch (err) {
-      console.error(err);
+      console.error("[ChatPanel] workflow error:", err);
     } finally {
       finishRun();
     }
@@ -68,7 +96,8 @@ export default function ChatPanel() {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Header */}
+
+      {/* ── Header ────────────────────────────────────────────────────────── */}
       <div style={{
         padding: "var(--space-4) var(--space-6)",
         borderBottom: "1px solid oklch(from var(--color-text) l c h / 0.08)",
@@ -85,13 +114,19 @@ export default function ChatPanel() {
               fontFamily: "var(--font-mono)",
             }}>
               {displayRun.status}
-              {displayRun.finishedAt && ` · ${Math.round((displayRun.finishedAt - displayRun.startedAt) / 1000)}s`}
+              {displayRun.finishedAt &&
+                ` · ${Math.round((displayRun.finishedAt - displayRun.startedAt) / 1000)}s`}
             </span>
           )}
         </div>
+
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
           {settings.defaultModel
-            ? <span style={{ fontSize: "var(--text-xs)", color: "var(--color-primary)", fontFamily: "var(--font-mono)" }}>
+            ? <span style={{
+                fontSize: "var(--text-xs)",
+                color: "var(--color-primary)",
+                fontFamily: "var(--font-mono)",
+              }}>
                 {settings.defaultModel}
               </span>
             : <span style={{ fontSize: "var(--text-xs)", color: "var(--color-error)" }}>
@@ -106,14 +141,21 @@ export default function ChatPanel() {
               alignItems: "center",
               gap: "var(--space-1)",
             }}>
-              <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--color-gold)", animation: "pulse 1.2s ease-in-out infinite" }} />
+              <span style={{
+                display: "inline-block",
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: "var(--color-gold)",
+                animation: "pulse 1.2s ease-in-out infinite",
+              }} />
               running
             </span>
           )}
         </div>
       </div>
 
-      {/* Message list */}
+      {/* ── Message list ──────────────────────────────────────────────────── */}
       <div style={{
         flex: 1,
         overflow: "auto",
@@ -133,7 +175,11 @@ export default function ChatPanel() {
             color: "var(--color-text-muted)",
             marginTop: "var(--space-16)",
           }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+            <svg
+              width="32" height="32" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="1.5"
+              aria-hidden="true"
+            >
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
             <p style={{ fontSize: "var(--text-sm)" }}>Enter a prompt to start a workflow</p>
@@ -146,29 +192,45 @@ export default function ChatPanel() {
         {displayRun && (
           <>
             <UserBubble text={displayRun.initialPrompt} />
+
             {displayRun.steps.map((step, i) => (
               <AgentBubble
-                key={`${step.agentId}-${i}`}
+                key={`${step.agentId ?? "parallel"}-${i}`}
                 agentId={step.agentId}
-                content={step.output ?? (streamBuffer[step.agentId] ?? "")}
+                content={step.output ?? ""}
                 status={step.status}
                 agents={agents}
+                parallelGroup={step.parallelGroup}
               />
             ))}
+
+            {/* Routing indicator: run active but no step is open yet */}
             {isRunning && !displayRun.steps.some((s) => s.status === "running") && (
-              <div style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)" }}>Routing…</div>
+              <div style={{
+                color: "var(--color-text-muted)",
+                fontSize: "var(--text-xs)",
+                padding: "var(--space-2) 0",
+              }}>
+                Routing…
+              </div>
             )}
           </>
         )}
+
         <div ref={bottomRef} />
       </div>
 
-      {/* Stop button */}
-      <div style={{ display: "flex", justifyContent: "center", minHeight: isRunning ? 40 : 0, transition: "min-height var(--transition-interactive)" }}>
+      {/* ── Stop button ───────────────────────────────────────────────────── */}
+      <div style={{
+        display: "flex",
+        justifyContent: "center",
+        minHeight: isRunning ? 40 : 0,
+        transition: "min-height var(--transition-interactive)",
+      }}>
         <StopButton />
       </div>
 
-      {/* Input bar */}
+      {/* ── Input bar ─────────────────────────────────────────────────────── */}
       <div style={{
         padding: "var(--space-4) var(--space-6)",
         borderTop: "1px solid oklch(from var(--color-text) l c h / 0.08)",
@@ -178,7 +240,12 @@ export default function ChatPanel() {
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); } }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              run();
+            }
+          }}
           placeholder="Enter a prompt… (Shift+Enter for newline)"
           rows={2}
           disabled={isRunning}
@@ -205,9 +272,9 @@ export default function ChatPanel() {
             color: "#fff",
             borderRadius: "var(--radius-md)",
             fontSize: "var(--text-sm)",
+            fontWeight: 500,
             opacity: canSubmit ? 1 : 0.4,
             alignSelf: "flex-end",
-            fontWeight: 500,
             transition: "opacity var(--transition-interactive), background var(--transition-interactive)",
           }}
         >
@@ -224,6 +291,8 @@ export default function ChatPanel() {
     </div>
   );
 }
+
+// ── Sub-components ───────────────────────────────────────────────────────────
 
 function UserBubble({ text }: { text: string }) {
   return (
@@ -243,50 +312,95 @@ function UserBubble({ text }: { text: string }) {
   );
 }
 
+type ParallelGroupMeta = {
+  agentIds: string[];
+  mergedOutput: string;
+  strategy: string;
+  succeededCount: number;
+  totalDurationMs: number;
+};
+
 function AgentBubble({
-  agentId, content, status, agents,
+  agentId,
+  content,
+  status,
+  agents,
+  parallelGroup,
 }: {
-  agentId: string;
+  agentId?: string;
   content: string;
   status: string;
   agents: Agent[];
+  parallelGroup?: ParallelGroupMeta & { results: unknown[] };
 }) {
-  const agent = agents.find((a) => a.id === agentId);
-  const isAborted = status === "aborted";
-  const isError   = status === "error";
+  const agent      = agentId ? agents.find((a) => a.id === agentId) : null;
+  const isAborted  = status === "aborted";
+  const isError    = status === "error";
+  const isParallel = !!parallelGroup;
+
+  const borderColor = isAborted
+    ? "oklch(from var(--color-notification) l c h / 0.2)"
+    : isError
+      ? "oklch(from var(--color-error) l c h / 0.2)"
+      : "oklch(from var(--color-text) l c h / 0.08)";
+
+  const bgColor = isAborted
+    ? "color-mix(in oklab, var(--color-notification) 6%, var(--color-surface-2))"
+    : isError
+      ? "color-mix(in oklab, var(--color-error) 6%, var(--color-surface-2))"
+      : "var(--color-surface-2)";
 
   return (
     <div>
+      {/* Label row */}
       <div style={{
         display: "flex",
         alignItems: "center",
         gap: "var(--space-2)",
         marginBottom: "var(--space-2)",
+        flexWrap: "wrap",
       }}>
-        <span style={{ fontSize: "var(--text-xs)", color: "var(--color-primary)", fontWeight: 600 }}>
-          ◈ {agent?.frontmatter.name ?? agentId}
-        </span>
-        {status === "running" && (
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>…</span>
-        )}
-        {isError && (
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--color-error)" }}>error</span>
-        )}
-        {isAborted && (
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--color-notification)" }}>aborted</span>
+        {isParallel ? (
+          <>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--color-purple)", fontWeight: 600 }}>
+              ⟳ Parallel · {parallelGroup!.strategy}
+            </span>
+            <span style={{
+              fontSize: "var(--text-xs)",
+              color: parallelGroup!.succeededCount === parallelGroup!.agentIds.length
+                ? "var(--color-success)"
+                : "var(--color-warning)",
+            }}>
+              {parallelGroup!.succeededCount}/{parallelGroup!.agentIds.length} ok
+            </span>
+            {parallelGroup!.totalDurationMs > 0 && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-faint)" }}>
+                · {(parallelGroup!.totalDurationMs / 1000).toFixed(1)}s
+              </span>
+            )}
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--color-primary)", fontWeight: 600 }}>
+              ◈ {agent?.frontmatter.name ?? agentId}
+            </span>
+            {status === "running" && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>…</span>
+            )}
+            {isError && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-error)" }}>error</span>
+            )}
+            {isAborted && (
+              <span style={{ fontSize: "var(--text-xs)", color: "var(--color-notification)" }}>aborted</span>
+            )}
+          </>
         )}
       </div>
+
+      {/* Bubble */}
       <div style={{
-        background: isAborted
-          ? "color-mix(in oklab, var(--color-notification) 6%, var(--color-surface-2))"
-          : isError
-            ? "color-mix(in oklab, var(--color-error) 6%, var(--color-surface-2))"
-            : "var(--color-surface-2)",
-        border: `1px solid ${
-          isAborted ? "oklch(from var(--color-notification) l c h / 0.2)"
-          : isError  ? "oklch(from var(--color-error) l c h / 0.2)"
-          :            "oklch(from var(--color-text) l c h / 0.08)"
-        }`,
+        background: bgColor,
+        border: `1px solid ${borderColor}`,
         borderRadius: "var(--radius-lg)",
         padding: "var(--space-4)",
         fontSize: "var(--text-sm)",

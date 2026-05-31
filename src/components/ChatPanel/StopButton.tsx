@@ -1,9 +1,11 @@
+/**
+ * StopButton
+ *
+ * Calls useWorkflowStore.abort() — the AbortController signal propagates
+ * through all in-flight fetch() streams in workflowRunner + parallelRunner.
+ */
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 
-/**
- * Floating stop button — rendered inside ChatPanel when a workflow is running.
- * Calls abort() on the workflow store which triggers the AbortSignal.
- */
 export default function StopButton() {
   const { isRunning, abort } = useWorkflowStore();
 
@@ -12,42 +14,27 @@ export default function StopButton() {
   return (
     <button
       onClick={abort}
-      aria-label="Stop running workflow"
+      aria-label="Stop workflow"
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-2)",
-        padding: "var(--space-2) var(--space-4)",
-        background: "var(--color-surface-2)",
-        border: "1px solid oklch(from var(--color-text) l c h / 0.12)",
+        padding: "var(--space-2) var(--space-5)",
+        background: "transparent",
+        border: "1px solid oklch(from var(--color-error) l c h / 0.5)",
+        color: "var(--color-error)",
         borderRadius: "var(--radius-full)",
-        color: "var(--color-notification)",
-        fontSize: "var(--text-sm)",
-        fontFamily: "var(--font-body)",
+        fontSize: "var(--text-xs)",
+        fontWeight: 500,
         cursor: "pointer",
-        boxShadow: "var(--shadow-md)",
-        transition: "background var(--transition-interactive), box-shadow var(--transition-interactive)",
+        transition: "background var(--transition-interactive), border-color var(--transition-interactive)",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = "var(--color-surface-offset)";
-        (e.currentTarget as HTMLButtonElement).style.boxShadow = "var(--shadow-lg)";
+        (e.currentTarget as HTMLButtonElement).style.background =
+          "color-mix(in oklab, var(--color-error) 10%, transparent)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = "var(--color-surface-2)";
-        (e.currentTarget as HTMLButtonElement).style.boxShadow = "var(--shadow-md)";
+        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
       }}
     >
-      {/* Square stop icon */}
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 14 14"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        <rect x="2" y="2" width="10" height="10" rx="1.5" />
-      </svg>
-      Stop
+      ■ Stop
     </button>
   );
 }
