@@ -16,7 +16,8 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 - **Streaming UI** — Every agent step streams output live as a chat bubble in real time
 - **Abort / Stop** — Cancel a running workflow at any point; the current step is marked `aborted` and the run is preserved in history
 - **Run History** — Every completed or aborted run is stored in the sidebar with status indicator, timestamp, duration, and the agent chain that ran
-- **Persistent Settings** — Default model, agents directory, and Ollama base URL are saved to disk via `tauri-plugin-store` and restored on next launch
+- **Settings Panel** — Slide-over drawer with sections for LLM, Agents, Routing mode, Appearance (dark/light/system), and diagnostics (embedding cache). All changes persist immediately
+- **Persistent Settings** — Default model, agents directory, Ollama base URL, theme, embedding model, and routing mode are saved to disk via `tauri-plugin-store` and restored on next launch
 - **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
 
 ---
@@ -31,7 +32,7 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 | **Ollama** | latest | [ollama.com/download](https://ollama.com/download) |
 | **WebView2** | any | Pre-installed on Windows 10 22H2+ / Windows 11 |
 
-> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **“Desktop development with C++”**.
+> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **"Desktop development with C++"**.
 
 ---
 
@@ -58,6 +59,9 @@ ollama serve
 
 # Pull at least one model (small and fast for development)
 ollama pull llama3.2:3b
+
+# Optional: pull the embedding model for semantic routing
+ollama pull nomic-embed-text
 ```
 
 ### 4. Start the dev server
@@ -70,12 +74,13 @@ pnpm tauri:dev
 
 ### 5. First launch — required setup
 
-On first launch you will need to configure two settings (accessible via the Settings panel):
+On first launch, open the **Settings panel** (gear icon in the sidebar footer) and configure:
 
 | Setting | What to enter |
 |---------|---------------|
 | **Agents directory** | Absolute path to a folder containing agent subfolders, e.g. `C:\Users\you\agentforge\agents` |
 | **Default model** | An Ollama model name you have pulled, e.g. `llama3.2:3b` |
+| **Routing mode** | `Full` (recommended) if `nomic-embed-text` is installed; otherwise `Rules + LLM` |
 
 Settings are saved automatically and restored on next launch.
 
@@ -122,7 +127,7 @@ agentforge/
 │   ├── styles/
 │   │   └── global.css            # Design tokens (CSS custom properties)
 │   ├── store/
-│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state
+│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state, settings (theme, embedModel, routingMode)
 │   │   ├── useHistoryStore.ts    # Zustand: run history (last 50), active run selection
 │   │   └── useWorkflowStore.ts   # Zustand: AbortController lifecycle (startRun / abort / finishRun)
 │   ├── types/
@@ -130,13 +135,16 @@ agentforge/
 │   ├── lib/
 │   │   ├── ollama.ts             # Ollama REST API client (all functions accept AbortSignal)
 │   │   ├── agentFs.ts            # Agent folder reader/writer (Tauri FS)
-│   │   ├── router.ts             # Agent routing (keyword + LLM fallback)
+│   │   ├── router.ts             # Agent routing (keyword → semantic embeddings → LLM fallback)
+│   │   ├── embeddings.ts         # Embedding cache (nomic-embed-text via Ollama)
 │   │   ├── workflowRunner.ts     # Agent chain executor (abort-aware, context budgeting)
 │   │   └── settings.ts           # Settings load/save via tauri-plugin-store
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx       # Nav + run history list + Ollama status footer
-│       │   └── OllamaGate.tsx    # “Ollama not found” screen with winget install
+│       │   ├── Sidebar.tsx       # Nav + run history list + Ollama status + settings trigger
+│       │   └── OllamaGate.tsx    # "Ollama not found" screen with winget install
+│       ├── Settings/
+│       │   └── SettingsPanel.tsx # Slide-over drawer: LLM, Agents, Routing, Appearance, Diagnostics
 │       ├── ModelManager/
 │       │   └── ModelManager.tsx  # Browse, download, and manage models
 │       ├── AgentExplorer/
@@ -172,7 +180,7 @@ Every subfolder in the agents directory is a standalone **agent**. Agents are de
 ```
 User Prompt
     ↓
-Router  →  selects best-matching agent based on triggers + LLM scoring
+Router  →  selects best-matching agent based on triggers + embeddings + LLM scoring
     ↓
 Agent A  →  executes, produces structured output
     ↓
@@ -185,7 +193,7 @@ Agent B  →  receives context + output, executes next step
 
 #### `persona.md` *(required)*
 
-Defines the agent’s identity, capabilities, and routing metadata.
+Defines the agent's identity, capabilities, and routing metadata.
 
 ```markdown
 ---
@@ -285,14 +293,41 @@ This agent may run linting and test suites.
 
 ### Routing Logic
 
-The router selects an agent in two stages:
+The router selects an agent in three stages (configurable in Settings → Routing):
 
-1. **Keyword match** — Each agent’s `triggers` array is scored against the prompt. The highest-scoring agent wins.
-2. **LLM fallback** — On a tie or no match, the default model is asked: *“Which of these agents is best suited for: [prompt]?”*
+1. **Keyword match** — Each agent's `triggers` array is scored against the prompt. Clear matches win immediately.
+2. **Semantic embeddings** — On ambiguous matches, `nomic-embed-text` computes cosine similarity between the prompt and each agent's description. Requires `Full` routing mode.
+3. **LLM fallback** — On a tie or no match, the default model is asked: *"Which of these agents is best suited for: [prompt]?"*
+
+### Routing Modes
+
+| Mode | Stages used | When to use |
+|------|-------------|-------------|
+| **Full** | Keyword → Embeddings → LLM | Most accurate; requires `nomic-embed-text` |
+| **Rules + LLM** | Keyword → LLM | Faster; no embedding model needed |
+| **Rules only** | Keyword only | Instant; least flexible |
 
 ### Abort Behaviour
 
 Pressing **Stop** during a run calls `AbortController.abort()`. The signal propagates through the entire call stack — `runWorkflow` → `chatStream` / `chat` → `fetch()`. The stream reader is cancelled in a `finally` block regardless of how the request ends. The interrupted step is marked `aborted` and the run is pushed to history with `status: "aborted"` and `finishedAt` set.
+
+---
+
+## Settings
+
+Open via the **gear icon** (⚙) in the sidebar footer. Changes take effect immediately and persist to disk.
+
+| Section | Setting | Description | Default |
+|---------|---------|-------------|---------|
+| LLM | Default model | Ollama model for agents without an explicit `model` field | — |
+| LLM | Ollama base URL | API endpoint (change for remote Ollama instances) | `http://localhost:11434` |
+| Agents | Agents directory | Folder scanned for agent subfolders | — |
+| Routing | Routing mode | `Full` / `Rules + LLM` / `Rules only` | `Full` |
+| Routing | Embedding model | Ollama model used for semantic routing | `nomic-embed-text` |
+| Appearance | Theme | `Dark` / `Light` / `System` | `Dark` |
+| Diagnostics | Embedding cache | In-memory vector cache size; Clear button | — |
+
+All settings are saved to `%APPDATA%\AgentForge\settings.json` via `tauri-plugin-store`.
 
 ---
 
@@ -301,24 +336,12 @@ Pressing **Stop** during a run calls `AbortController.abort()`. The signal propa
 The sidebar maintains a chronological list of runs (newest first, max 50). Each entry shows:
 
 - **Status dot** — green (done), gold/pulsing (running), red (error), grey (aborted)
-- **Prompt preview** — first two lines of the initial prompt
+- **Prompt preview** — first 60 characters of the initial prompt
 - **Time** — start time in `HH:MM` format
 - **Duration** — elapsed time once finished (e.g. `18s`, `2m 4s`)
 - **Agent chain** — `router → coder → reviewer` (deduplicated agent IDs)
 
 Clicking a history entry switches the Chat Panel to display that run. History is in-memory only and resets on app restart (persistent history: Phase 4).
-
----
-
-## Configuration
-
-App settings are persisted to `%APPDATA%\AgentForge\settings.json` via `tauri-plugin-store`:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `defaultModel` | Ollama model used by agents without an explicit `model` field | — |
-| `agentsDir` | Absolute path to the agents directory | — |
-| `ollamaBaseUrl` | Ollama API endpoint | `http://localhost:11434` |
 
 ---
 
@@ -366,14 +389,14 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 - [x] Agent Explorer UI
 - [x] Chat / Run Panel UI
 
-**Phase 2 — Stability**
+**Phase 2 — Stability** ✅ complete
 - [x] Settings persistence (`tauri-plugin-store`)
 - [x] Example agent pack (Router, Coder, Reviewer, Summarizer)
 - [x] Abort signal for running workflows (end-to-end: Stop button → `AbortController` → `fetch()`)
 - [x] Run history in sidebar (status, duration, agent chain, click-to-view)
-- [ ] `workflow.md` sequential step parser
-- [ ] Semantic routing via embeddings (`nomic-embed-text`)
-- [ ] Settings panel UI
+- [x] `workflow.md` sequential step parser
+- [x] Semantic routing via embeddings (`nomic-embed-text`)
+- [x] Settings panel UI (LLM, Agents, Routing mode, Appearance, Diagnostics)
 
 **Phase 3 — Power Features**
 - [ ] Workflow graph visualization (ReactFlow)
