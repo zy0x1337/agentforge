@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { loadSettings, saveSettings } from "@/lib/settings";
-import type { Agent, WorkflowRun, WorkflowStep } from "@/types";
+import type { Agent } from "@/types";
 
 export type Panel = "models" | "agents" | "chat" | "graph";
 
@@ -37,14 +37,6 @@ interface AppState {
   selectedAgent: Agent | null;
   selectAgent: (a: Agent | null) => void;
 
-  // Run
-  activeRun: WorkflowRun | null;
-  setActiveRun: (r: WorkflowRun) => void;
-  addRunStep: (step: WorkflowStep) => void;
-  streamBuffer: Record<string, string>;
-  appendStream: (agentId: string, chunk: string) => void;
-  clearStream: () => void;
-
   // Settings (persisted)
   settings: Settings;
   settingsLoaded: boolean;
@@ -79,24 +71,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAgents: (a) => set({ agents: a }),
   selectedAgent: null,
   selectAgent: (a) => set({ selectedAgent: a }),
-
-  activeRun: null,
-  setActiveRun: (r) => set({ activeRun: r }),
-  addRunStep: (step) =>
-    set((s) => ({
-      activeRun: s.activeRun
-        ? { ...s.activeRun, steps: [...s.activeRun.steps, step] }
-        : null,
-    })),
-  streamBuffer: {},
-  appendStream: (agentId, chunk) =>
-    set((s) => ({
-      streamBuffer: {
-        ...s.streamBuffer,
-        [agentId]: (s.streamBuffer[agentId] ?? "") + chunk,
-      },
-    })),
-  clearStream: () => set({ streamBuffer: {} }),
 
   settings: SETTINGS_DEFAULTS,
   settingsLoaded: false,
