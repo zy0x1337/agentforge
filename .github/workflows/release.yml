@@ -4,42 +4,33 @@
 # Trigger:
 #   git tag v0.2.0 && git push origin v0.2.0
 #
-# Artifacts published to GitHub Release:
-#   AgentForge_0.2.0_x64-setup.exe    (NSIS installer)
-#   AgentForge_0.2.0_x64_en-US.msi    (WiX MSI)
-#   AgentForge_0.2.0_x64.nsis.zip     (portable, optional)
-#
 # Required repository secrets:
-#   TAURI_SIGNING_PRIVATE_KEY   — base64-encoded .p12 / PEM private key
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  — passphrase (may be empty string)
-#
-# To generate a signing key pair (self-signed, for update signatures):
-#   npx @tauri-apps/cli signer generate -w ~/.tauri/agentforge.key
-#   Then base64-encode the .key file and store as the secret above.
+#   TAURI_SIGNING_PRIVATE_KEY
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 # ───────────────────────────────────────────────────────────────────────────────
 name: Release
 
 on:
   push:
     tags:
-      - 'v[0-9]*.[0-9]*.[0-9]*'   # v0.1.0, v1.2.3, etc.
+      - 'v[0-9]*.[0-9]*.[0-9]*'
 
 permissions:
-  contents: write   # needed to create GitHub Releases and upload assets
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # ────────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Build — Windows x64
     runs-on: windows-latest
     timeout-minutes: 60
 
     steps:
-      # ── Source ────────────────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Node / pnpm ───────────────────────────────────────────────────────────────────
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -48,13 +39,12 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
 
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
-      # ── Rust ───────────────────────────────────────────────────────────────────────
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -66,14 +56,9 @@ jobs:
           workspaces: src-tauri
           cache-on-failure: true
 
-      # ── Icon raster generation ───────────────────────────────────────────────────────────
-      # Generate all PNG/ICO/ICNS from the canonical SVG.
-      # This ensures every release build has up-to-date icons even if
-      # contributors forgot to commit the regenerated PNGs.
       - name: Generate icon raster files
         run: pnpm tauri icon src-tauri/icons/icon.svg
 
-      # ── Tauri build ───────────────────────────────────────────────────────────────────
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -81,7 +66,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}        # e.g. v0.2.0
+          tagName: ${{ github.ref_name }}
           releaseName: 'AgentForge ${{ github.ref_name }}'
           releaseBody: |
             ## AgentForge ${{ github.ref_name }}
@@ -101,10 +86,9 @@ jobs:
             ---
             **Full changelog:** https://github.com/zy0x1337/agentforge/commits/${{ github.ref_name }}
           releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}  # v0.2.0-beta.1 -> prerelease
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target x86_64-pc-windows-msvc
 
-      # ── Checksums ───────────────────────────────────────────────────────────────────
       - name: Generate checksums
         shell: pwsh
         run: |
@@ -115,7 +99,6 @@ jobs:
             "$hash  $($_.Name)"
           }
           $checksums | Set-Content checksums.txt
-          Write-Output "Generated checksums.txt:"
           Get-Content checksums.txt
 
       - name: Upload checksums to release

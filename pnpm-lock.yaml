@@ -1,0 +1,82 @@
+lockfileVersion: '9'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+  .:
+    dependencies:
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.5.0
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2
+        version: 2.2.0
+      '@tauri-apps/plugin-fs':
+        specifier: ^2
+        version: 2.4.0
+      '@tauri-apps/plugin-http':
+        specifier: ^2
+        version: 2.4.1
+      '@tauri-apps/plugin-shell':
+        specifier: ^2
+        version: 2.2.0
+      '@tauri-apps/plugin-store':
+        specifier: ^2
+        version: 2.2.0
+      '@xyflow/react':
+        specifier: ^12
+        version: 12.6.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      dagre:
+        specifier: ^0.8.5
+        version: 0.8.5
+      dompurify:
+        specifier: ^3
+        version: 3.2.6
+      gray-matter:
+        specifier: ^4
+        version: 4.0.3
+      marked:
+        specifier: ^12
+        version: 12.0.0
+      react:
+        specifier: ^18
+        version: 18.3.1
+      react-dom:
+        specifier: ^18
+        version: 18.3.1(react@18.3.1)
+      zustand:
+        specifier: ^4
+        version: 4.5.7(@types/react@18.3.23)(react@18.3.1)
+    devDependencies:
+      '@tauri-apps/cli':
+        specifier: ^2
+        version: 2.5.0
+      '@types/dagre':
+        specifier: ^0.7.3
+        version: 0.7.3
+      '@types/dompurify':
+        specifier: ^3
+        version: 3.0.5
+      '@types/node':
+        specifier: ^20
+        version: 20.19.0
+      '@types/react':
+        specifier: ^18
+        version: 18.3.23
+      '@types/react-dom':
+        specifier: ^18
+        version: 18.3.7(@types/react@18.3.23)
+      '@vitejs/plugin-react':
+        specifier: ^4
+        version: 4.5.2(vite@5.4.19(@types/node@20.19.0))
+      eslint:
+        specifier: ^8
+        version: 8.57.1
+      typescript:
+        specifier: ^5
+        version: 5.8.3
+      vite:
+        specifier: ^5
+        version: 5.4.19(@types/node@20.19.0)

@@ -1,8 +1,3 @@
-# ───────────────────────────────────────────────────────────────────────────────
-# CI — type-check + lint on every PR and push to main
-# Fast path: no Tauri/Rust compile, just the TypeScript frontend.
-# Full Windows build only runs in release.yml on v* tags.
-# ───────────────────────────────────────────────────────────────────────────────
 name: CI
 
 on:
@@ -12,6 +7,7 @@ on:
       - 'src/**'
       - 'src-tauri/src/**'
       - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'tsconfig*.json'
       - 'vite.config.ts'
       - '.github/workflows/ci.yml'
@@ -21,6 +17,9 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   typecheck-lint:
@@ -40,7 +39,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'pnpm'
 
       - name: Install dependencies
