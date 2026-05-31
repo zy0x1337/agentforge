@@ -1,0 +1,42 @@
+/* EdgeWithLabel.module.css */
+
+.edgeMuted {
+  stroke: var(--border);
+  stroke-width: 1.5;
+  fill: none;
+}
+
+.edgeActive {
+  stroke: var(--primary);
+  stroke-width: 2;
+  fill: none;
+  stroke-dasharray: 6 3;
+  animation: march 0.6s linear infinite;
+}
+
+@keyframes march {
+  to { stroke-dashoffset: -9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edgeActive { animation: none; stroke-dasharray: none; }
+}
+
+.label {
+  position: absolute;
+  pointer-events: none;
+  padding: 1px 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.labelActive {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: oklch(from var(--primary) l c h / 0.08);
+}
