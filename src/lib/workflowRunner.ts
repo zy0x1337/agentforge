@@ -9,7 +9,7 @@
  *
  *   DYNAMIC — no workflow.md present (or parseWorkflow throws). The router selects
  *             the first agent from the initial prompt, then re-routes after every
- *             step using next_agents + LLM fallback. Original behaviour preserved.
+ *             step using next_agents + semantic similarity + LLM fallback.
  *
  * Context modes (set per-agent in persona.md or overridden per-step in workflow.md):
  *   full    → pass the full previous output as context
@@ -22,7 +22,7 @@
  */
 
 import { chat, chatStream } from "./ollama";
-import { routeToAgent, routeNext } from "./router";
+import { routeToAgent, routeNext, RouterOptions } from "./router";
 import { parseWorkflow, evaluateCondition, WorkflowParseError } from "./workflowParser";
 import type { Agent, WorkflowRun, WorkflowStep, ChatMessage } from "@/types";
 
@@ -71,7 +71,6 @@ function buildMessages(
     });
   }
 
-  // Step-level prompt_override > agent's prompt.md template > bare user prompt
   const promptTemplate =
     promptOverride
       ? promptOverride
@@ -83,12 +82,6 @@ function buildMessages(
 
   return messages;
 }
-
-function findAgent(agents: Agent[], id: string): Agent | undefined {
-  return agents.find((a) => a.id === id);
-}
-
-// ── Run helpers ───────────────────────────────────────────────────────────────
 
 function makeRun(initialPrompt: string): WorkflowRun {
   return {
@@ -112,6 +105,7 @@ async function runStaticWorkflow(
   signal?: AbortSignal
 ): Promise<WorkflowRun> {
   const definition = parseWorkflow(workflowSource);
+  run.executionMode = "static";
 
   let previousOutput: string | null = null;
   let stepCount = 0;
@@ -123,7 +117,6 @@ async function runStaticWorkflow(
       return run;
     }
 
-    // ── Condition check ─────────────────────────────────────────────────────
     const conditionMet = evaluateCondition(stepDef.condition, {
       previousOutput: previousOutput ?? "",
       stepCount,
@@ -135,8 +128,7 @@ async function runStaticWorkflow(
       continue;
     }
 
-    // ── Resolve agent ────────────────────────────────────────────────────────
-    const agent = findAgent(agents, stepDef.agent);
+    const agent = agents.find((a) => a.id === stepDef.agent);
     if (!agent) {
       const errStep: WorkflowStep = {
         agentId: stepDef.agent,
@@ -147,24 +139,18 @@ async function runStaticWorkflow(
       };
       onStep(errStep);
       run.steps.push(errStep);
-
       if (definition.onError === "stop") {
         run.status = "error";
         run.finishedAt = Date.now();
         return run;
       }
-      continue; // "continue" or "retry" — just skip for now, retry handled below
+      continue;
     }
 
-    // ── Resolve per-step overrides ───────────────────────────────────────────
-    const model =
-      stepDef.model ?? agent.frontmatter.model ?? defaultModel;
-    const contextMode =
-      stepDef.context_mode ?? agent.frontmatter.context_mode ?? "summary";
-    const temperature =
-      stepDef.temperature ?? agent.frontmatter.temperature ?? 0.7;
+    const model       = stepDef.model        ?? agent.frontmatter.model        ?? defaultModel;
+    const contextMode = stepDef.context_mode ?? agent.frontmatter.context_mode ?? "summary";
+    const temperature = stepDef.temperature  ?? agent.frontmatter.temperature  ?? 0.7;
 
-    // ── Summarise context if needed ──────────────────────────────────────────
     let contextContent = previousOutput;
     if (contextContent && contextMode === "summary") {
       contextContent = await summarize(contextContent, model, signal);
@@ -186,7 +172,6 @@ async function runStaticWorkflow(
     };
     onStep(step);
 
-    // ── Execute with retry support ────────────────────────────────────────────
     const maxAttempts =
       definition.onError === "retry" ? definition.maxRetries + 1 : 1;
     let attempt = 0;
@@ -199,14 +184,10 @@ async function runStaticWorkflow(
         await chatStream(
           model,
           messages,
-          (token) => {
-            output += token;
-            onChunk(agent.id, token);
-          },
+          (token) => { output += token; onChunk(agent.id, token); },
           temperature,
           signal
         );
-
         step.output = output;
         step.status = "done";
         previousOutput = output;
@@ -215,8 +196,7 @@ async function runStaticWorkflow(
         run.steps.push({ ...step });
         succeeded = true;
       } catch (err) {
-        const isAbort =
-          err instanceof DOMException && err.name === "AbortError";
+        const isAbort = err instanceof DOMException && err.name === "AbortError";
         if (isAbort) {
           step.status = "aborted";
           step.output = "[aborted by user]";
@@ -226,22 +206,18 @@ async function runStaticWorkflow(
           run.finishedAt = Date.now();
           return run;
         }
-
         if (attempt >= maxAttempts) {
           step.status = "error";
-          step.output =
-            attempt > 1
-              ? `[failed after ${attempt} attempts] ${String(err)}`
-              : String(err);
+          step.output = attempt > 1
+            ? `[failed after ${attempt} attempts] ${String(err)}`
+            : String(err);
           onStep({ ...step });
           run.steps.push({ ...step });
-
           if (definition.onError === "stop") {
             run.status = "error";
             run.finishedAt = Date.now();
             return run;
           }
-          // "continue" — record the error step, move on
         } else {
           console.warn(
             `[workflowRunner] Step '${agent.id}' failed (attempt ${attempt}/${maxAttempts}), retrying…`
@@ -256,7 +232,7 @@ async function runStaticWorkflow(
   return run;
 }
 
-// ── Dynamic execution (router driven) ────────────────────────────────────────
+// ── Dynamic execution (router driven) ─────────────────────────────────────────
 
 async function runDynamicWorkflow(
   run: WorkflowRun,
@@ -265,8 +241,11 @@ async function runDynamicWorkflow(
   defaultModel: string,
   onStep: (step: WorkflowStep) => void,
   onChunk: (agentId: string, token: string) => void,
+  routerOptions: RouterOptions,
   signal?: AbortSignal
 ): Promise<WorkflowRun> {
+  run.executionMode = "dynamic";
+
   if (signal?.aborted) {
     run.status = "aborted";
     return run;
@@ -276,7 +255,7 @@ async function runDynamicWorkflow(
     run.initialPrompt,
     agents,
     routerModel,
-    signal
+    { ...routerOptions, signal }
   );
   if (!currentAgent) {
     run.status = "error";
@@ -294,7 +273,7 @@ async function runDynamicWorkflow(
     }
 
     stepCount++;
-    const model = currentAgent.frontmatter.model || defaultModel;
+    const model       = currentAgent.frontmatter.model        || defaultModel;
     const contextMode = currentAgent.frontmatter.context_mode ?? "summary";
 
     let contextContent = previousOutput;
@@ -322,23 +301,17 @@ async function runDynamicWorkflow(
       await chatStream(
         model,
         messages,
-        (token) => {
-          output += token;
-          onChunk(currentAgent!.id, token);
-        },
+        (token) => { output += token; onChunk(currentAgent!.id, token); },
         currentAgent.frontmatter.temperature ?? 0.7,
         signal
       );
-
       step.output = output;
       step.status = "done";
       previousOutput = output;
       onStep({ ...step });
       run.steps.push({ ...step });
     } catch (err) {
-      const isAbort =
-        err instanceof DOMException && err.name === "AbortError";
-
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
       if (isAbort) {
         step.status = "aborted";
         step.output = "[aborted by user]";
@@ -348,7 +321,6 @@ async function runDynamicWorkflow(
         run.finishedAt = Date.now();
         return run;
       }
-
       step.status = "error";
       step.output = String(err);
       onStep({ ...step });
@@ -363,7 +335,7 @@ async function runDynamicWorkflow(
       previousOutput ?? "",
       agents,
       routerModel,
-      signal
+      { ...routerOptions, signal }
     );
   }
 
@@ -374,17 +346,14 @@ async function runDynamicWorkflow(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-/**
- * Run a workflow starting from initialPrompt.
- *
- * If any agent in the resolved starting set has a workflow.md, the static
- * execution path is used for that agent's definition. Otherwise the dynamic
- * router-driven path runs.
- *
- * The caller decides which mode to invoke by passing workflowSource:
- *   - string  → static mode (contents of workflow.md)
- *   - null    → dynamic mode (router selects agents)
- */
+export interface RunWorkflowOptions {
+  /** Raw workflow.md contents → static mode. Null/undefined → dynamic mode. */
+  workflowSource?: string | null;
+  /** Forwarded to the router for Tier 2 (semantic) and Tier 3 (LLM) routing. */
+  routerOptions?: RouterOptions;
+  signal?: AbortSignal;
+}
+
 export async function runWorkflow(
   initialPrompt: string,
   agents: Agent[],
@@ -392,9 +361,9 @@ export async function runWorkflow(
   defaultModel: string,
   onStep: (step: WorkflowStep) => void,
   onChunk: (agentId: string, token: string) => void,
-  signal?: AbortSignal,
-  workflowSource?: string | null
+  options: RunWorkflowOptions = {}
 ): Promise<WorkflowRun> {
+  const { workflowSource, routerOptions = {}, signal } = options;
   const run = makeRun(initialPrompt);
 
   if (workflowSource) {
@@ -410,7 +379,6 @@ export async function runWorkflow(
       );
     } catch (e) {
       if (e instanceof WorkflowParseError) {
-        // Fall back to dynamic if workflow.md is malformed — surface a warning step
         const warnStep: WorkflowStep = {
           agentId: "_system",
           input: "",
@@ -433,6 +401,7 @@ export async function runWorkflow(
     defaultModel,
     onStep,
     onChunk,
+    routerOptions,
     signal
   );
 }
