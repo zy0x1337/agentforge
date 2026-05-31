@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { isOllamaRunning, listLocalModels } from "@/lib/ollama";
 import { loadAgents } from "@/lib/agentFs";
-import Sidebar from "@/components/shared/Sidebar";
+import { Sidebar } from "@/components/shared/Sidebar";
 import ModelManager from "@/components/ModelManager/ModelManager";
 import AgentExplorer from "@/components/AgentExplorer/AgentExplorer";
 import ChatPanel from "@/components/ChatPanel/ChatPanel";
 import OllamaGate from "@/components/shared/OllamaGate";
+import { WorkflowGraph } from "@/components/WorkflowGraph/WorkflowGraph";
 
 export default function App() {
   const {
@@ -25,7 +26,7 @@ export default function App() {
     loadPersistedSettings();
   }, [loadPersistedSettings]);
 
-  // Poll Ollama health every 8s (only after settings are loaded)
+  // Poll Ollama health every 8s
   useEffect(() => {
     if (!settingsLoaded) return;
 
@@ -68,11 +69,17 @@ export default function App() {
     );
   }
 
+  // Graph panel is available offline (static agent preview needs no Ollama)
+  const showGraph = activePanel === "graph";
+
   return (
     <div style={{ display: "flex", height: "100dvh", background: "var(--bg)" }}>
       <Sidebar />
       <main style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {!ollamaRunning ? (
+        {/* Graph panel bypasses OllamaGate — works without Ollama running */}
+        {showGraph ? (
+          <WorkflowGraph />
+        ) : !ollamaRunning ? (
           <OllamaGate />
         ) : (
           <>

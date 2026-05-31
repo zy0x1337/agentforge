@@ -8,6 +8,7 @@
  *   │ Models              │  ← nav
  *   │ Agents              │
  *   │ Run                 │
+ *   │ Graph               │
  *   ├─────────────────────┤
  *   │ RUNS          Clear │  ← run history
  *   │  ● prompt…         │
@@ -53,6 +54,18 @@ const NAV_ITEMS: { id: Panel; label: string; icon: React.ReactNode }[] = [
     icon: (
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
         <polygon points="3,2 13,8 3,14" />
+      </svg>
+    ),
+  },
+  {
+    id: "graph",
+    label: "Graph",
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <circle cx="8" cy="3" r="2" />
+        <circle cx="3" cy="13" r="2" />
+        <circle cx="13" cy="13" r="2" />
+        <path d="M8 5v2.5M8 7.5L3 11M8 7.5L13 11" />
       </svg>
     ),
   },
@@ -143,7 +156,8 @@ export function Sidebar() {
                   }`}
                   onClick={() => {
                     setActiveRunId(run.id);
-                    setActivePanel("chat");
+                    // Navigate to graph for a visual replay of the run
+                    setActivePanel("graph");
                   }}
                 >
                   <span
