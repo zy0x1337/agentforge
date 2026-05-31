@@ -1,407 +1,308 @@
 /**
- * Workflow Runner — executes a chain of agents, manages context budget.
+ * workflowRunner.ts
+ * Sequential workflow execution engine.
  *
- * Execution modes:
+ * Parses workflow.md steps, dispatches sequential steps one by one,
+ * and delegates parallel steps to parallelRunner.ts.
  *
- *   STATIC  — an agent folder contains a workflow.md. The parsed WorkflowDefinition
- *             drives the exact step sequence, per-step overrides, conditions, and
- *             on_error behaviour. The router is NOT called between steps.
+ * Context budget
+ * ──────────────
+ * Each agent's context_mode controls what is forwarded:
+ *   full     → full output of previous step
+ *   summary  → first 1200 chars + "…[truncated]"
+ *   none     → only the original user prompt
  *
- *   DYNAMIC — no workflow.md present (or parseWorkflow throws). The router selects
- *             the first agent from the initial prompt, then re-routes after every
- *             step using next_agents + semantic similarity + LLM fallback.
- *
- * Context modes (set per-agent in persona.md or overridden per-step in workflow.md):
- *   full    → pass the full previous output as context
- *   summary → summarise previous output first (safe for long chains)
- *   none    → start fresh, only the original user prompt
- *
- * Abort:
- *   Pass an AbortSignal to cancel mid-run. The runner throws an
- *   "AbortError" which sets the run status to "aborted".
+ * Event bus
+ * ─────────
+ * The runner emits typed RunEvents through the emitEvent callback.
+ * Consumers (ChatPanel, WorkflowGraph, useHistoryStore) subscribe
+ * independently — no tight coupling.
  */
 
-import { chat, chatStream } from "./ollama";
-import { routeToAgent, routeNext, RouterOptions } from "./router";
-import { parseWorkflow, evaluateCondition, WorkflowParseError } from "./workflowParser";
-import type { Agent, WorkflowRun, WorkflowStep, ChatMessage } from "@/types";
+import matter from 'gray-matter';
+import type { AgentMeta } from './agentFs';
+import { runParallelStep, type ParallelStep, type ParallelRunnerDeps } from './parallelRunner';
 
-const MAX_DYNAMIC_STEPS = 8;
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+export type ContextMode = 'full' | 'summary' | 'none';
 
-async function summarize(
-  text: string,
-  model: string,
-  signal?: AbortSignal
-): Promise<string> {
-  return chat(
-    model,
-    [
-      {
-        role: "system",
-        content:
-          "Summarize the following assistant output in 3-5 sentences, preserving key decisions and outputs.",
-      },
-      { role: "user", content: text },
-    ],
-    0.3,
-    512,
-    signal
-  );
+export interface WorkflowStep {
+  /** Sequential: single agent */
+  agent?: string;
+  /** Parallel group */
+  agents?: string[];
+  mode?: 'sequential' | 'parallel';
+  merge_strategy?: 'concat' | 'summarise' | 'vote';
 }
 
-function buildMessages(
-  agent: Agent,
-  userPrompt: string,
-  previousOutput: string | null,
-  contextMode: "full" | "summary" | "none",
-  promptOverride?: string
-): ChatMessage[] {
-  const messages: ChatMessage[] = [];
-
-  if (agent.persona) {
-    messages.push({ role: "system", content: agent.persona });
-  }
-
-  if (previousOutput && contextMode !== "none") {
-    messages.push({
-      role: "system",
-      content: `--- Previous agent output (${contextMode}) ---\n${previousOutput}`,
-    });
-  }
-
-  const promptTemplate =
-    promptOverride
-      ? promptOverride
-          .replace("{{input}}", userPrompt)
-          .replace("{{previous}}", previousOutput ?? "")
-      : (agent.prompt?.replace("{{input}}", userPrompt) ?? userPrompt);
-
-  messages.push({ role: "user", content: promptTemplate });
-
-  return messages;
+export interface WorkflowDef {
+  steps: WorkflowStep[];
 }
 
-function makeRun(initialPrompt: string): WorkflowRun {
-  return {
-    id: crypto.randomUUID(),
-    startedAt: Date.now(),
-    initialPrompt,
-    steps: [],
-    status: "running",
-  };
+/** All event types emitted during a run */
+export type RunEvent =
+  | { type: 'run_start';            runId: string; prompt: string; timestamp: number }
+  | { type: 'agent_start';          runId: string; agentId: string; timestamp: number }
+  | { type: 'agent_chunk';          runId: string; agentId: string; chunk: string; timestamp: number }
+  | { type: 'agent_done';           runId: string; agentId: string; output: string; durationMs: number; timestamp: number }
+  | { type: 'agent_error';          runId: string; agentId: string; error: string; status: 'error' | 'aborted'; timestamp: number }
+  | { type: 'parallel_group_done';  runId: string; agentIds: string[]; succeededCount: number; totalCount: number; mergedOutput: string; timestamp: number }
+  | { type: 'run_done';             runId: string; finalOutput: string; durationMs: number; timestamp: number }
+  | { type: 'run_error';            runId: string; error: string; timestamp: number }
+  | { type: 'run_aborted';          runId: string; timestamp: number };
+
+export interface WorkflowRunnerDeps {
+  /** Run a single agent against Ollama and return the full response text. */
+  runSingleAgent: (
+    agentId: string,
+    inputContext: string,
+    signal: AbortSignal,
+    onChunk: (chunk: string) => void,
+  ) => Promise<string>;
+
+  /** Emit an event to all subscribers. */
+  emitEvent: (event: RunEvent) => void;
+
+  /** Resolve agent ID to AgentMeta (for context_mode + model resolution). */
+  getAgentMeta: (agentId: string) => AgentMeta | undefined;
+
+  /** Read a file from the agent folder (for workflow.md parsing). */
+  readAgentFile: (agentId: string, filename: string) => Promise<string | null>;
 }
 
-// ── Static execution (workflow.md driven) ─────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Context budget helper
+// ---------------------------------------------------------------------------
 
-async function runStaticWorkflow(
-  run: WorkflowRun,
-  workflowSource: string,
-  agents: Agent[],
-  defaultModel: string,
-  onStep: (step: WorkflowStep) => void,
-  onChunk: (agentId: string, token: string) => void,
-  signal?: AbortSignal
-): Promise<WorkflowRun> {
-  const definition = parseWorkflow(workflowSource);
-  run.executionMode = "static";
+const SUMMARY_LIMIT = 1200;
 
-  let previousOutput: string | null = null;
-  let stepCount = 0;
-
-  for (const stepDef of definition.steps) {
-    if (signal?.aborted) {
-      run.status = "aborted";
-      run.finishedAt = Date.now();
-      return run;
-    }
-
-    const conditionMet = evaluateCondition(stepDef.condition, {
-      previousOutput: previousOutput ?? "",
-      stepCount,
-    });
-    if (!conditionMet) {
-      console.info(
-        `[workflowRunner] Skipping step '${stepDef.agent}' — condition not met: ${stepDef.condition}`
-      );
-      continue;
-    }
-
-    const agent = agents.find((a) => a.id === stepDef.agent);
-    if (!agent) {
-      const errStep: WorkflowStep = {
-        agentId: stepDef.agent,
-        input: run.initialPrompt,
-        output: `Agent '${stepDef.agent}' not found in agents directory.`,
-        status: "error",
-        contextMode: "none",
-      };
-      onStep(errStep);
-      run.steps.push(errStep);
-      if (definition.onError === "stop") {
-        run.status = "error";
-        run.finishedAt = Date.now();
-        return run;
-      }
-      continue;
-    }
-
-    const model       = stepDef.model        ?? agent.frontmatter.model        ?? defaultModel;
-    const contextMode = stepDef.context_mode ?? agent.frontmatter.context_mode ?? "summary";
-    const temperature = stepDef.temperature  ?? agent.frontmatter.temperature  ?? 0.7;
-
-    let contextContent = previousOutput;
-    if (contextContent && contextMode === "summary") {
-      contextContent = await summarize(contextContent, model, signal);
-    }
-
-    const messages = buildMessages(
-      agent,
-      run.initialPrompt,
-      contextContent,
-      contextMode,
-      stepDef.prompt_override
-    );
-
-    const step: WorkflowStep = {
-      agentId: agent.id,
-      input: messages[messages.length - 1].content,
-      status: "running",
-      contextMode,
-    };
-    onStep(step);
-
-    const maxAttempts =
-      definition.onError === "retry" ? definition.maxRetries + 1 : 1;
-    let attempt = 0;
-    let succeeded = false;
-
-    while (attempt < maxAttempts && !succeeded) {
-      attempt++;
-      try {
-        let output = "";
-        await chatStream(
-          model,
-          messages,
-          (token) => { output += token; onChunk(agent.id, token); },
-          temperature,
-          signal
-        );
-        step.output = output;
-        step.status = "done";
-        previousOutput = output;
-        stepCount++;
-        onStep({ ...step });
-        run.steps.push({ ...step });
-        succeeded = true;
-      } catch (err) {
-        const isAbort = err instanceof DOMException && err.name === "AbortError";
-        if (isAbort) {
-          step.status = "aborted";
-          step.output = "[aborted by user]";
-          onStep({ ...step });
-          run.steps.push({ ...step });
-          run.status = "aborted";
-          run.finishedAt = Date.now();
-          return run;
-        }
-        if (attempt >= maxAttempts) {
-          step.status = "error";
-          step.output = attempt > 1
-            ? `[failed after ${attempt} attempts] ${String(err)}`
-            : String(err);
-          onStep({ ...step });
-          run.steps.push({ ...step });
-          if (definition.onError === "stop") {
-            run.status = "error";
-            run.finishedAt = Date.now();
-            return run;
-          }
-        } else {
-          console.warn(
-            `[workflowRunner] Step '${agent.id}' failed (attempt ${attempt}/${maxAttempts}), retrying…`
-          );
-        }
-      }
-    }
+function applyContextBudget(
+  output: string,
+  mode: ContextMode,
+  originalPrompt: string,
+): string {
+  switch (mode) {
+    case 'full':    return output;
+    case 'none':    return originalPrompt;
+    case 'summary':
+    default:
+      return output.length <= SUMMARY_LIMIT
+        ? output
+        : output.slice(0, SUMMARY_LIMIT) + '\n…[truncated — full output available in run history]';
   }
-
-  run.status = "done";
-  run.finishedAt = Date.now();
-  return run;
 }
 
-// ── Dynamic execution (router driven) ─────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Workflow definition parser
+// ---------------------------------------------------------------------------
 
-async function runDynamicWorkflow(
-  run: WorkflowRun,
-  agents: Agent[],
-  routerModel: string,
-  defaultModel: string,
-  onStep: (step: WorkflowStep) => void,
-  onChunk: (agentId: string, token: string) => void,
-  routerOptions: RouterOptions,
-  signal?: AbortSignal
-): Promise<WorkflowRun> {
-  run.executionMode = "dynamic";
-
-  if (signal?.aborted) {
-    run.status = "aborted";
-    return run;
-  }
-
-  let currentAgent = await routeToAgent(
-    run.initialPrompt,
-    agents,
-    routerModel,
-    { ...routerOptions, signal }
-  );
-  if (!currentAgent) {
-    run.status = "error";
-    return run;
-  }
-
-  let previousOutput: string | null = null;
-  let stepCount = 0;
-
-  while (currentAgent && stepCount < MAX_DYNAMIC_STEPS) {
-    if (signal?.aborted) {
-      run.status = "aborted";
-      run.finishedAt = Date.now();
-      return run;
-    }
-
-    stepCount++;
-    const model       = currentAgent.frontmatter.model        || defaultModel;
-    const contextMode = currentAgent.frontmatter.context_mode ?? "summary";
-
-    let contextContent = previousOutput;
-    if (contextContent && contextMode === "summary") {
-      contextContent = await summarize(contextContent, model, signal);
-    }
-
-    const messages = buildMessages(
-      currentAgent,
-      run.initialPrompt,
-      contextContent,
-      contextMode
-    );
-
-    const step: WorkflowStep = {
-      agentId: currentAgent.id,
-      input: messages[messages.length - 1].content,
-      status: "running",
-      contextMode,
-    };
-    onStep(step);
-
-    try {
-      let output = "";
-      await chatStream(
-        model,
-        messages,
-        (token) => { output += token; onChunk(currentAgent!.id, token); },
-        currentAgent.frontmatter.temperature ?? 0.7,
-        signal
-      );
-      step.output = output;
-      step.status = "done";
-      previousOutput = output;
-      onStep({ ...step });
-      run.steps.push({ ...step });
-    } catch (err) {
-      const isAbort = err instanceof DOMException && err.name === "AbortError";
-      if (isAbort) {
-        step.status = "aborted";
-        step.output = "[aborted by user]";
-        onStep({ ...step });
-        run.steps.push({ ...step });
-        run.status = "aborted";
-        run.finishedAt = Date.now();
-        return run;
-      }
-      step.status = "error";
-      step.output = String(err);
-      onStep({ ...step });
-      run.steps.push({ ...step });
-      run.status = "error";
-      run.finishedAt = Date.now();
-      return run;
-    }
-
-    currentAgent = await routeNext(
-      currentAgent,
-      previousOutput ?? "",
-      agents,
-      routerModel,
-      { ...routerOptions, signal }
-    );
-  }
-
-  run.status = "done";
-  run.finishedAt = Date.now();
-  return run;
+function parseWorkflowDef(raw: string): WorkflowDef {
+  const { data } = matter(raw);
+  const steps: WorkflowStep[] = Array.isArray(data.steps) ? data.steps : [];
+  return { steps };
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Main runner
+// ---------------------------------------------------------------------------
 
-export interface RunWorkflowOptions {
-  /** Raw workflow.md contents → static mode. Null/undefined → dynamic mode. */
-  workflowSource?: string | null;
-  /** Forwarded to the router for Tier 2 (semantic) and Tier 3 (LLM) routing. */
-  routerOptions?: RouterOptions;
-  signal?: AbortSignal;
-}
-
+/**
+ * Execute a full workflow starting from `entryAgentId`.
+ *
+ * If the entry agent has a `workflow.md`, that definition overrides the
+ * dynamic `next_agents` chain. Otherwise the runner follows `next_agents`
+ * frontmatter links sequentially until no next agent is defined.
+ *
+ * @param entryAgentId  - The first agent to activate (usually "router")
+ * @param prompt        - The original user prompt
+ * @param signal        - AbortSignal for the entire run
+ * @param deps          - Injected functions (avoids circular deps)
+ * @param runId         - Unique ID for this run
+ */
 export async function runWorkflow(
-  initialPrompt: string,
-  agents: Agent[],
-  routerModel: string,
-  defaultModel: string,
-  onStep: (step: WorkflowStep) => void,
-  onChunk: (agentId: string, token: string) => void,
-  options: RunWorkflowOptions = {}
-): Promise<WorkflowRun> {
-  const { workflowSource, routerOptions = {}, signal } = options;
-  const run = makeRun(initialPrompt);
+  entryAgentId: string,
+  prompt: string,
+  signal: AbortSignal,
+  deps: WorkflowRunnerDeps,
+  runId: string,
+): Promise<string> {
+  const runStart = Date.now();
 
-  if (workflowSource) {
-    try {
-      return await runStaticWorkflow(
-        run,
-        workflowSource,
-        agents,
-        defaultModel,
-        onStep,
-        onChunk,
-        signal
+  deps.emitEvent({ type: 'run_start', runId, prompt, timestamp: Date.now() });
+
+  try {
+    // ── Check for explicit workflow.md ──────────────────────────────────────
+    const workflowRaw = await deps.readAgentFile(entryAgentId, 'workflow.md');
+    if (workflowRaw) {
+      return await runFromWorkflowDef(
+        parseWorkflowDef(workflowRaw),
+        prompt,
+        signal,
+        deps,
+        runId,
+        runStart,
       );
-    } catch (e) {
-      if (e instanceof WorkflowParseError) {
-        const warnStep: WorkflowStep = {
-          agentId: "_system",
-          input: "",
-          output: `⚠ workflow.md parse error — falling back to dynamic routing.\n\n${e.message}`,
-          status: "error",
-          contextMode: "none",
-        };
-        onStep(warnStep);
-        run.steps.push(warnStep);
-      } else {
-        throw e;
-      }
+    }
+
+    // ── Dynamic chaining via next_agents ────────────────────────────────────
+    return await runDynamic(entryAgentId, prompt, signal, deps, runId, runStart);
+  } catch (err) {
+    if (signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+      deps.emitEvent({ type: 'run_aborted', runId, timestamp: Date.now() });
+      return '';
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    deps.emitEvent({ type: 'run_error', runId, error: msg, timestamp: Date.now() });
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Workflow.md-driven execution
+// ---------------------------------------------------------------------------
+
+async function runFromWorkflowDef(
+  def: WorkflowDef,
+  prompt: string,
+  signal: AbortSignal,
+  deps: WorkflowRunnerDeps,
+  runId: string,
+  runStart: number,
+): Promise<string> {
+  let context = prompt;
+
+  const parallelDeps: ParallelRunnerDeps = {
+    runSingleAgent: deps.runSingleAgent,
+    emitEvent: deps.emitEvent,
+    getAgentMeta: deps.getAgentMeta,
+  };
+
+  for (const step of def.steps) {
+    if (signal.aborted) break;
+
+    // Parallel step
+    if (step.mode === 'parallel' && step.agents?.length) {
+      const result = await runParallelStep(
+        step as ParallelStep,
+        context,
+        signal,
+        parallelDeps,
+        runId,
+      );
+      if (result.anySucceeded) context = result.mergedOutput;
+      continue;
+    }
+
+    // Sequential step
+    if (step.agent) {
+      context = await runSequentialStep(step.agent, context, prompt, signal, deps, runId);
     }
   }
 
-  return runDynamicWorkflow(
-    run,
-    agents,
-    routerModel,
-    defaultModel,
-    onStep,
-    onChunk,
-    routerOptions,
-    signal
-  );
+  const finalOutput = context;
+  deps.emitEvent({
+    type: 'run_done',
+    runId,
+    finalOutput,
+    durationMs: Date.now() - runStart,
+    timestamp: Date.now(),
+  });
+  return finalOutput;
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic next_agents chaining
+// ---------------------------------------------------------------------------
+
+async function runDynamic(
+  entryAgentId: string,
+  prompt: string,
+  signal: AbortSignal,
+  deps: WorkflowRunnerDeps,
+  runId: string,
+  runStart: number,
+): Promise<string> {
+  let currentAgentId: string | undefined = entryAgentId;
+  let context = prompt;
+  const visited = new Set<string>();
+
+  while (currentAgentId && !signal.aborted) {
+    if (visited.has(currentAgentId)) break; // cycle guard
+    visited.add(currentAgentId);
+
+    context = await runSequentialStep(currentAgentId, context, prompt, signal, deps, runId);
+
+    // Determine next agent from frontmatter
+    const meta = deps.getAgentMeta(currentAgentId);
+    const nextAgents = meta?.nextAgents ?? [];
+    // Take the first next agent (multi-branch = parallel, handled via workflow.md)
+    currentAgentId = nextAgents[0];
+  }
+
+  const finalOutput = context;
+  deps.emitEvent({
+    type: 'run_done',
+    runId,
+    finalOutput,
+    durationMs: Date.now() - runStart,
+    timestamp: Date.now(),
+  });
+  return finalOutput;
+}
+
+// ---------------------------------------------------------------------------
+// Run one sequential agent step
+// ---------------------------------------------------------------------------
+
+async function runSequentialStep(
+  agentId: string,
+  context: string,
+  originalPrompt: string,
+  signal: AbortSignal,
+  deps: WorkflowRunnerDeps,
+  runId: string,
+): Promise<string> {
+  const meta = deps.getAgentMeta(agentId);
+  const contextMode: ContextMode = (meta?.contextMode as ContextMode) ?? 'summary';
+  const budgetedContext = applyContextBudget(context, contextMode, originalPrompt);
+
+  deps.emitEvent({ type: 'agent_start', runId, agentId, timestamp: Date.now() });
+
+  const start = Date.now();
+  let output = '';
+
+  try {
+    output = await deps.runSingleAgent(
+      agentId,
+      budgetedContext,
+      signal,
+      (chunk) =>
+        deps.emitEvent({ type: 'agent_chunk', runId, agentId, chunk, timestamp: Date.now() }),
+    );
+  } catch (err) {
+    const isAbort = signal.aborted || (err instanceof Error && err.name === 'AbortError');
+    deps.emitEvent({
+      type: 'agent_error',
+      runId,
+      agentId,
+      error: err instanceof Error ? err.message : String(err),
+      status: isAbort ? 'aborted' : 'error',
+      timestamp: Date.now(),
+    });
+    throw err;
+  }
+
+  deps.emitEvent({
+    type: 'agent_done',
+    runId,
+    agentId,
+    output,
+    durationMs: Date.now() - start,
+    timestamp: Date.now(),
+  });
+
+  return output;
 }
