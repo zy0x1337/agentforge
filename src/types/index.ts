@@ -19,6 +19,7 @@ export interface Agent {
   frontmatter: AgentFrontmatter;
   persona: string;
   prompt?: string;
+  /** Raw contents of workflow.md — present only if the file exists. */
   workflow?: string;
 }
 
@@ -35,6 +36,8 @@ export interface WorkflowStep {
   output?: string;
   status: "pending" | "running" | "done" | "error" | "aborted";
   contextMode: "full" | "summary" | "none";
+  /** True when this step was skipped due to a condition evaluating to false. */
+  skipped?: boolean;
 }
 
 export interface WorkflowRun {
@@ -44,6 +47,8 @@ export interface WorkflowRun {
   initialPrompt: string;
   steps: WorkflowStep[];
   status: "running" | "done" | "error" | "aborted";
+  /** "static" when driven by workflow.md, "dynamic" when driven by the router. */
+  executionMode?: "static" | "dynamic";
 }
 
 // ── Ollama types ──────────────────────────────────────────────────────────────
