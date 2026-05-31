@@ -1,9 +1,12 @@
 import { create } from "zustand";
 import type { Agent, OllamaModel, WorkflowRun, WorkflowStep, AppSettings } from "@/types";
+import { loadSettings, saveSettings } from "@/lib/settings";
 
 interface AppState {
   settings: AppSettings;
+  settingsLoaded: boolean;
   updateSettings: (s: Partial<AppSettings>) => void;
+  initSettings: () => Promise<void>;
 
   ollamaRunning: boolean;
   setOllamaRunning: (v: boolean) => void;
@@ -29,15 +32,28 @@ interface AppState {
   setActivePanel: (p: "models" | "agents" | "chat") => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
-  settings: {
-    agentsDir: "",
-    defaultModel: "",
-    ollamaBaseUrl: "http://localhost:11434",
-    theme: "system",
+const DEFAULT_SETTINGS: AppSettings = {
+  agentsDir: "",
+  defaultModel: "",
+  ollamaBaseUrl: "http://localhost:11434",
+  theme: "system",
+};
+
+export const useAppStore = create<AppState>((set, get) => ({
+  settings: { ...DEFAULT_SETTINGS },
+  settingsLoaded: false,
+
+  initSettings: async () => {
+    const settings = await loadSettings();
+    set({ settings, settingsLoaded: true });
   },
-  updateSettings: (s) =>
-    set((state) => ({ settings: { ...state.settings, ...s } })),
+
+  updateSettings: (partial) =>
+    set((state) => {
+      const next = { ...state.settings, ...partial };
+      saveSettings(next);
+      return { settings: next };
+    }),
 
   ollamaRunning: false,
   setOllamaRunning: (v) => set({ ollamaRunning: v }),

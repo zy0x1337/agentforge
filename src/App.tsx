@@ -15,9 +15,17 @@ export default function App() {
     setOllamaRunning,
     setLocalModels,
     settings,
+    settingsLoaded,
     setAgents,
+    initSettings,
   } = useAppStore();
 
+  // Load persisted settings once on mount
+  useEffect(() => {
+    initSettings();
+  }, [initSettings]);
+
+  // Poll Ollama health every 8s
   useEffect(() => {
     const check = async () => {
       const running = await isOllamaRunning();
@@ -32,10 +40,20 @@ export default function App() {
     return () => clearInterval(interval);
   }, [setOllamaRunning, setLocalModels]);
 
+  // Reload agents whenever agentsDir changes (after settings are loaded)
   useEffect(() => {
-    if (!settings.agentsDir) return;
+    if (!settingsLoaded || !settings.agentsDir) return;
     loadAgents(settings.agentsDir).then(setAgents).catch(console.error);
-  }, [settings.agentsDir, setAgents]);
+  }, [settings.agentsDir, settingsLoaded, setAgents]);
+
+  // Don't render panels until settings are hydrated
+  if (!settingsLoaded) {
+    return (
+      <div style={{ display: "flex", height: "100dvh", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
+        Loading…
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "flex", height: "100dvh", background: "var(--bg)" }}>

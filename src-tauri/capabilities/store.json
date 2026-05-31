@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "store",
+  "description": "Allow reading and writing the app settings store",
+  "windows": ["main"],
+  "permissions": [
+    "store:allow-load",
+    "store:allow-set",
+    "store:allow-get",
+    "store:allow-save",
+    "store:allow-clear",
+    "store:allow-delete"
+  ]
+}
