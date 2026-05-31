@@ -32,10 +32,8 @@ export interface AgentMessage {
 
 // ── Parallel execution types ──────────────────────────────────────────────────
 
-/** Status of a single agent inside a parallel group. */
 export type AgentResultStatus = 'ok' | 'error' | 'timeout' | 'aborted';
 
-/** Result produced by one agent inside a parallel fan-out group. */
 export interface AgentResult {
   agentId: string;
   output: string;
@@ -44,50 +42,46 @@ export interface AgentResult {
   error?: string;
 }
 
-/** Merge strategies for parallel fan-in. */
 export type MergeStrategy = 'concat' | 'summarise' | 'vote';
 
-/** Full result returned by runParallelStep() after all agents finish. */
 export interface ParallelRunResult {
   merged: string;
   results: AgentResult[];
   strategy: MergeStrategy;
   totalDurationMs: number;
-  /** True if at least one agent in the group succeeded. */
   anySucceeded: boolean;
 }
 
-/**
- * A parallel group step as parsed from workflow.md frontmatter.
- * Used by workflowRunner when dispatching to parallelRunner.
- */
 export interface ParallelGroupStep {
   agents: string[];
   mode: 'parallel';
   merge_strategy?: MergeStrategy;
-  /** Per-agent timeout in milliseconds (default: 120 000). */
   timeout_ms?: number;
 }
 
+// ── Run events (canonical — single source of truth) ───────────────────────────
+// Both workflowRunner and parallelRunner import RunEvent from here.
+
+export type RunEvent =
+  | { type: 'run_start';           runId: string; prompt: string; timestamp: number }
+  | { type: 'agent_start';         runId: string; agentId: string; timestamp: number }
+  | { type: 'agent_chunk';         runId: string; agentId: string; chunk: string; timestamp: number }
+  | { type: 'agent_done';          runId: string; agentId: string; output: string; durationMs: number; timestamp: number }
+  | { type: 'agent_error';         runId: string; agentId: string; error: string; status: 'error' | 'aborted'; timestamp: number }
+  | { type: 'parallel_group_done'; runId: string; agentIds: string[]; succeededCount: number; totalCount: number; mergedOutput: string; timestamp: number }
+  | { type: 'run_done';            runId: string; finalOutput: string; durationMs: number; timestamp: number }
+  | { type: 'run_error';           runId: string; error: string; timestamp: number }
+  | { type: 'run_aborted';         runId: string; timestamp: number };
+
 // ── Workflow step (sequential or parallel) ────────────────────────────────────
 
-/**
- * Represents one step in a WorkflowRun — either a single sequential agent
- * or a parallel fan-out group.
- *
- * Sequential steps have `agentId`.
- * Parallel steps have `parallelGroup` and aggregate results from all agents.
- */
 export interface WorkflowStep {
-  /** Present for sequential steps. */
   agentId?: string;
   input: string;
   output?: string;
   status: 'pending' | 'running' | 'done' | 'error' | 'aborted';
   contextMode: 'full' | 'summary' | 'none';
-  /** True when this step was skipped due to a condition evaluating to false. */
   skipped?: boolean;
-  /** Present for parallel steps — contains per-agent results and merged output. */
   parallelGroup?: {
     agentIds: string[];
     results: AgentResult[];
@@ -105,7 +99,6 @@ export interface WorkflowRun {
   initialPrompt: string;
   steps: WorkflowStep[];
   status: 'running' | 'done' | 'error' | 'aborted';
-  /** "static" when driven by workflow.md, "dynamic" when driven by the router. */
   executionMode?: 'static' | 'dynamic';
 }
 
@@ -139,6 +132,5 @@ export interface AppSettings {
   embeddingModel?: string;
 }
 
-// ── Re-exports from parallelRunner (single import surface) ───────────────────
-// Consumers import from '@/types' rather than reaching into lib/parallelRunner.
+// ── Re-exports from lib/ (single import surface for consumers) ────────────────
 export type { ParallelRunnerDeps } from '../lib/parallelRunner';
