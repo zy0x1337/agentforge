@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { loadSettings, saveSettings } from "@/lib/settings";
 import type { Agent, WorkflowRun, WorkflowStep } from "@/types";
 
-export type Panel = "models" | "agents" | "chat";
+export type Panel = "models" | "agents" | "chat" | "graph";
 
 export interface Settings {
   defaultModel: string;
@@ -103,10 +103,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   loadPersistedSettings: async () => {
     const persisted = await loadSettings();
-    // Merge with defaults so new fields added in updates are always present
     const merged: Settings = { ...SETTINGS_DEFAULTS, ...persisted };
     set({ settings: merged, settingsLoaded: true });
-    // Apply theme immediately
     applyTheme(merged.theme);
   },
 
@@ -118,7 +116,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 }));
 
-// ── Theme application ────────────────────────────────────────────────────────────
+// ── Theme application ────────────────────────────────────────────────────────
 
 function applyTheme(theme: Settings["theme"]) {
   const root = document.documentElement;
