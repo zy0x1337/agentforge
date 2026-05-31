@@ -11,6 +11,7 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 ## Features
 
 - **Model Manager** — View installed models, download popular ones with a single click via Ollama, pull any custom model by name, and set a default model for the app
+- **Hugging Face GGUF Browser** — Search public Hugging Face repositories, inspect `.gguf` artifacts, and open official download URLs directly from the app
 - **Agent Explorer** — Open any folder as an agents directory; every subfolder becomes an agent defined by `.md` files with YAML frontmatter
 - **Inline MD Editor** — CodeMirror 6 split-pane editor inside Agent Explorer: syntax-highlighted markdown + YAML, live preview, structured Frontmatter Panel, dirty state (`●`), `Ctrl+S` to save, per-tab revert
 - **Workflow Runner** — Enter a prompt; the router selects the best-matching agent, executes it, and passes structured output to the next agent in the chain
@@ -118,70 +119,112 @@ agentforge_0.1.0_x64.msi         ← MSI package
 
 ```
 agentforge/
-├── index.html                    # Tauri WebView entry point
+├── index.html
 ├── vite.config.ts
 ├── package.json
 ├── tsconfig.json
 │
-├── src/                          # React + TypeScript frontend
-│   ├── main.tsx                  # ReactDOM entry
-│   ├── App.tsx                   # Root component, settings load, Ollama health polling
+├── src/
+│   ├── main.tsx
+│   ├── App.tsx
 │   ├── styles/
-│   │   └── global.css            # Design tokens (CSS custom properties)
+│   │   └── global.css
 │   ├── store/
-│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state, settings
-│   │   ├── useHistoryStore.ts    # Zustand: run history (last 50), active run selection
-│   │   ├── useWorkflowStore.ts   # Zustand: AbortController lifecycle
-│   │   └── useGraphStore.ts      # Zustand: ReactFlow nodes/edges derived from active run
+│   │   ├── useAppStore.ts
+│   │   ├── useHistoryStore.ts
+│   │   ├── useWorkflowStore.ts
+│   │   └── useGraphStore.ts
 │   ├── types/
-│   │   └── index.ts              # TypeScript interfaces
+│   │   └── index.ts
 │   ├── lib/
-│   │   ├── ollama.ts             # Ollama REST API client
-│   │   ├── agentFs.ts            # Agent folder reader/writer (Tauri FS)
-│   │   ├── router.ts             # Agent routing (keyword → semantic → LLM fallback)
-│   │   ├── embeddings.ts         # Embedding cache (nomic-embed-text via Ollama)
-│   │   ├── workflowRunner.ts     # Agent chain executor (abort-aware, context budgeting)
-│   │   ├── graphLayout.ts        # dagre layout helpers for WorkflowGraph
-│   │   └── settings.ts           # Settings load/save via tauri-plugin-store
+│   │   ├── ollama.ts
+│   │   ├── agentFs.ts
+│   │   ├── router.ts
+│   │   ├── embeddings.ts
+│   │   ├── workflowRunner.ts
+│   │   ├── graphLayout.ts
+│   │   ├── hfHub.ts                # Hugging Face Hub API client for GGUF search/download links
+│   │   └── settings.ts
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx       # Nav (Models/Agents/Run/Graph) + run history + Ollama status
-│       │   └── OllamaGate.tsx    # "Ollama not found" screen with winget install
+│       │   ├── Sidebar.tsx
+│       │   └── OllamaGate.tsx
 │       ├── Settings/
-│       │   └── SettingsPanel.tsx # Slide-over drawer: LLM, Agents, Routing, Appearance, Diagnostics
+│       │   └── SettingsPanel.tsx
 │       ├── ModelManager/
-│       │   └── ModelManager.tsx  # Browse, download, and manage models
+│       │   └── ModelManager.tsx
+│       ├── HfGgufBrowser/
+│       │   ├── HfGgufBrowser.tsx   # Search public HF repos and list .gguf files
+│       │   └── HfGgufBrowser.module.css
 │       ├── AgentExplorer/
-│       │   └── AgentExplorer.tsx # Navigate agent folders; opens AgentEditor on selection
+│       │   └── AgentExplorer.tsx
 │       ├── AgentEditor/
-│       │   ├── AgentEditor.tsx         # CodeMirror 6 split-pane: editor + live preview
+│       │   ├── AgentEditor.tsx
 │       │   ├── AgentEditor.module.css
-│       │   ├── FrontmatterPanel.tsx    # Structured KV editor for persona.md YAML frontmatter
+│       │   ├── FrontmatterPanel.tsx
 │       │   ├── FrontmatterPanel.module.css
-│       │   └── useEditorStore.ts       # Zustand: open files, dirty map, active tab, save/revert
+│       │   └── useEditorStore.ts
 │       ├── WorkflowGraph/
-│       │   ├── WorkflowGraph.tsx       # ReactFlow canvas (live run mode + static preview)
-│       │   ├── AgentNode.tsx           # Custom node: 5 states (pending/running/done/error/aborted)
-│       │   └── EdgeWithLabel.tsx       # Animated edge with context_mode label
+│       │   ├── WorkflowGraph.tsx
+│       │   ├── AgentNode.tsx
+│       │   └── EdgeWithLabel.tsx
 │       └── ChatPanel/
-│           ├── ChatPanel.tsx     # Run workflows, stream output, display history
-│           └── StopButton.tsx    # Floating stop button (visible only while running)
+│           ├── ChatPanel.tsx
+│           └── StopButton.tsx
 │
-├── src-tauri/                    # Rust backend (Tauri v2)
+├── src-tauri/
 │   ├── Cargo.toml
 │   ├── build.rs
 │   ├── tauri.conf.json
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs                # Tauri commands: check_ollama, install_ollama
+│       └── lib.rs
 │
-└── agents/                       # Example agent pack
+└── agents/
     ├── README.md
     ├── router/
     ├── coder/
     ├── reviewer/
     └── summarizer/
 ```
+
+---
+
+## Hugging Face GGUF Browser
+
+The **Hugging Face GGUF Browser** adds a public-model discovery layer on top of Ollama.
+
+### What it does
+
+- Search public model repositories via the Hugging Face Hub API
+- Filter results to likely GGUF repositories (`gguf` in repo id or tags)
+- Open a repository and inspect all sibling files ending in `.gguf`
+- Show file sizes when available
+- Open the official download URL on `huggingface.co` in the browser
+
+### Data flow
+
+```
+Search query
+    ↓
+GET /api/models?search=...
+    ↓
+Filter to GGUF repos
+    ↓
+Select repo
+    ↓
+GET /api/models/:repoId
+    ↓
+Extract siblings[] ending in .gguf
+    ↓
+Build https://huggingface.co/:repo/resolve/main/:file URL
+```
+
+### Notes
+
+- The browser uses only **official public Hugging Face endpoints**
+- Gated/private repositories are surfaced but may require authentication in the browser
+- Download currently opens the official file URL in the default browser; direct in-app download to a chosen folder is the next logical extension
 
 ---
 
@@ -272,13 +315,13 @@ steps:
   - agent: coder
   - agent: reviewer
   - agent: summarizer
-mode: sequential   # "sequential" | "parallel" (parallel: Phase 3)
+mode: sequential   # "sequential" | "parallel" (parallel: Phase 4)
 ---
 
 This workflow creates and reviews code in three steps.
 ```
 
-#### `tools.md` *(planned — Phase 3)*
+#### `tools.md` *(Phase 3)*
 
 Defines shell commands or scripts this agent is permitted to execute.
 
@@ -336,7 +379,7 @@ Selecting an agent in the Agent Explorer opens the **AgentEditor** — a full Co
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  [persona.md ●] [prompt.md] [workflow.md] [tools.md]  [💾] [↺]  │  ← tab bar
+│  [persona.md ●] [prompt.md] [workflow.md] [tools.md]  [💾] [↺]  │
 ├──────────────────────────────────┬───────────────────────────────┤
 │                                  │                               │
 │   CodeMirror 6                   │   Live MD preview             │  FM panel
@@ -489,8 +532,8 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 **Phase 3 — Power Features** *(in progress)*
 - [x] Workflow graph visualization (ReactFlow + dagre, live + static modes)
 - [x] Inline MD editor in Agent Explorer (CodeMirror 6, live preview, Frontmatter Panel, dirty state, Ctrl+S)
-- [ ] `tools.md` shell execution (Rust command, allowlist, timeout)
-- [ ] Hugging Face GGUF browser + direct download
+- [x] `tools.md` shell execution (Rust command, allowlist, timeout)
+- [x] Hugging Face GGUF browser (public repo search, GGUF file listing, official download URLs)
 - [ ] Parallel agent execution
 
 **Phase 4 — Distribution**
@@ -512,6 +555,7 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 | LLM runtime | Ollama |
 | Graph visualization | @xyflow/react + dagre |
 | MD editor | CodeMirror 6 (`@codemirror/lang-markdown`, `@codemirror/lang-yaml`) |
+| External model discovery | Hugging Face Hub REST API |
 | MD parsing | gray-matter (frontmatter), marked (render), DOMPurify (sanitize) |
 | Tauri plugins | fs, shell, http, dialog, store |
 

@@ -1,0 +1,199 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.title {
+  font-size: var(--text-xl);
+  color: var(--color-text);
+}
+
+.subtitle {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+  max-width: 70ch;
+}
+
+.searchBar {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.input {
+  flex: 1;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.searchBtn,
+.downloadBtn {
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  font-weight: 600;
+}
+
+.searchBtn:disabled,
+.downloadBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(420px, 1.05fr);
+  gap: var(--space-4);
+  min-height: 0;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.panelTitle {
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.repoList,
+.fileList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  overflow: auto;
+}
+
+.repoCard {
+  text-align: left;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.repoCardActive {
+  border-color: var(--color-primary);
+  background: var(--color-primary-highlight);
+}
+
+.repoTop,
+.repoMeta,
+.fileRow,
+.fileInfo,
+.repoSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.repoTop {
+  justify-content: space-between;
+}
+
+.repoId,
+.fileName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--color-text);
+  word-break: break-all;
+}
+
+.repoMeta,
+.fileSize,
+.empty,
+.error {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.badge {
+  font-size: var(--text-xs);
+  padding: 0.1rem var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-warning-highlight);
+  color: var(--color-warning);
+}
+
+.repoSummary {
+  flex-wrap: wrap;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  color: var(--color-text-muted);
+}
+
+.fileRow {
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+}
+
+.fileInfo {
+  min-width: 0;
+  flex: 1;
+  justify-content: space-between;
+}
+
+.empty,
+.error {
+  padding: var(--space-4);
+}
+
+.error {
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  background: var(--color-error-highlight);
+  color: var(--color-error);
+}
+
+@media (max-width: 980px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    min-height: 380px;
+  }
+
+  .searchBar {
+    flex-direction: column;
+  }
+}
