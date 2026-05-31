@@ -1,10 +1,11 @@
-use tauri::Manager;
-use std::process::Command;
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
 use std::time::Duration;
-use std::sync::{Arc, Mutex};
 use std::thread;
+use tauri::Manager;
 
-/// Check whether Ollama is reachable on localhost:11434.
+// ─── Ollama helpers ────────────────────────────────────────────────────────
+
 #[tauri::command]
 pub fn check_ollama() -> bool {
     Command::new("curl")
@@ -14,7 +15,6 @@ pub fn check_ollama() -> bool {
         .unwrap_or(false)
 }
 
-/// Install Ollama via winget (fire-and-forget).
 #[tauri::command]
 pub fn install_ollama() {
     let _ = Command::new("winget")
@@ -22,15 +22,169 @@ pub fn install_ollama() {
         .spawn();
 }
 
-/// Payload emitted for every line of stdout/stderr from a tool command.
+// ─── Direct GGUF download ─────────────────────────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct DownloadProgressEvent {
+    pub download_id: String,
+    pub bytes_received: u64,
+    pub total_bytes: u64,   // 0 when unknown
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+/// Download a file from `url` and save it to `dest_path`.
+/// Emits `download://progress` events with byte counts.
+/// Returns the final destination path on success.
+#[tauri::command]
+pub async fn download_gguf(
+    app: tauri::AppHandle,
+    download_id: String,
+    url: String,
+    dest_path: String,
+) -> Result<String, String> {
+    use std::fs;
+    use std::io::Write;
+
+    let response = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("HTTP error: {e}"))?;
+
+    let total: u64 = response
+        .header("content-length")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    // Create parent directories if needed
+    if let Some(parent) = std::path::Path::new(&dest_path).parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let mut file = fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+    let mut reader = response.into_reader();
+    let mut buf = vec![0u8; 65_536]; // 64 KiB chunks
+    let mut received: u64 = 0;
+    let mut last_emit: u64 = 0;
+
+    loop {
+        match std::io::Read::read(&mut reader, &mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+                received += n as u64;
+                // Emit at most every 256 KiB to avoid flooding the event bus
+                if received - last_emit >= 262_144 || (total > 0 && received == total) {
+                    last_emit = received;
+                    let _ = app.emit("download://progress", DownloadProgressEvent {
+                        download_id: download_id.clone(),
+                        bytes_received: received,
+                        total_bytes: total,
+                        done: false,
+                        error: None,
+                    });
+                }
+            }
+            Err(e) => {
+                let _ = app.emit("download://progress", DownloadProgressEvent {
+                    download_id: download_id.clone(),
+                    bytes_received: received,
+                    total_bytes: total,
+                    done: false,
+                    error: Some(e.to_string()),
+                });
+                return Err(e.to_string());
+            }
+        }
+    }
+
+    let _ = app.emit("download://progress", DownloadProgressEvent {
+        download_id: download_id.clone(),
+        bytes_received: received,
+        total_bytes: total,
+        done: true,
+        error: None,
+    });
+
+    Ok(dest_path)
+}
+
+// ─── Ollama import (create from local GGUF) ───────────────────────────────
+
+#[derive(Clone, serde::Serialize)]
+pub struct OllamaImportEvent {
+    pub import_id: String,
+    pub status: String,   // line from Ollama stdout/stderr
+    pub done: bool,
+    pub error: Option<String>,
+}
+
+/// Calls `ollama create <model_name> --file <gguf_path>` and
+/// streams progress lines as `ollama://import` events.
+#[tauri::command]
+pub async fn import_gguf_to_ollama(
+    app: tauri::AppHandle,
+    import_id: String,
+    model_name: String,
+    gguf_path: String,
+) -> Result<(), String> {
+    let mut child = Command::new("ollama")
+        .args(["create", &model_name, "--file", &gguf_path])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ollama: {e}"))?;
+
+    let stdout = child.stdout.take().unwrap();
+    let stderr = child.stderr.take().unwrap();
+    let app_out = app.clone();
+    let id_out = import_id.clone();
+    let app_err = app.clone();
+    let id_err = import_id.clone();
+
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().flatten() {
+            let _ = app_out.emit("ollama://import", OllamaImportEvent {
+                import_id: id_out.clone(),
+                status: line,
+                done: false,
+                error: None,
+            });
+        }
+    });
+
+    thread::spawn(move || {
+        for line in BufReader::new(stderr).lines().flatten() {
+            let _ = app_err.emit("ollama://import", OllamaImportEvent {
+                import_id: id_err.clone(),
+                status: line,
+                done: false,
+                error: None,
+            });
+        }
+    });
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let code = status.code().unwrap_or(-1);
+
+    let _ = app.emit("ollama://import", OllamaImportEvent {
+        import_id: import_id.clone(),
+        status: format!("exit {code}"),
+        done: true,
+        error: if code == 0 { None } else { Some(format!("ollama create exited with code {code}")) },
+    });
+
+    if code == 0 { Ok(()) } else { Err(format!("ollama create failed (exit {code})")) }
+}
+
+// ─── tools.md shell execution ─────────────────────────────────────────────
+
 #[derive(Clone, serde::Serialize)]
 pub struct ToolOutputEvent {
     pub run_id: String,
     pub line: String,
-    pub stream: String, // "stdout" | "stderr"
+    pub stream: String,
 }
 
-/// Payload emitted when a tool command finishes.
 #[derive(Clone, serde::Serialize)]
 pub struct ToolDoneEvent {
     pub run_id: String,
@@ -38,12 +192,6 @@ pub struct ToolDoneEvent {
     pub error: Option<String>,
 }
 
-/// Execute a whitelisted shell command.
-/// `allowed` must match exactly one entry in the agent's `allowed_commands` list
-/// (validated on the TypeScript side before this call is made).
-///
-/// Emits `tool://output` events per line and a final `tool://done` event.
-/// Kills the child process if `timeout_secs` elapses.
 #[tauri::command]
 pub async fn run_tool_command(
     app: tauri::AppHandle,
@@ -53,9 +201,6 @@ pub async fn run_tool_command(
     cwd: String,
     timeout_secs: u64,
 ) -> Result<(), String> {
-    use std::io::{BufRead, BufReader};
-    use std::process::Stdio;
-
     let mut child = Command::new(&command)
         .args(&args)
         .current_dir(&cwd)
@@ -65,24 +210,16 @@ pub async fn run_tool_command(
         .map_err(|e| format!("Failed to spawn '{}': {}", command, e))?;
 
     let child_id = child.id();
-    let app_handle = app.clone();
-    let run_id_clone = run_id.clone();
 
-    // Timeout watchdog
     if timeout_secs > 0 {
         let app_wdog = app.clone();
         let run_id_wdog = run_id.clone();
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(timeout_secs));
-            // Best-effort kill; ignore errors
             #[cfg(windows)]
-            let _ = Command::new("taskkill")
-                .args(["/PID", &child_id.to_string(), "/F"])
-                .output();
+            let _ = Command::new("taskkill").args(["/PID", &child_id.to_string(), "/F"]).output();
             #[cfg(not(windows))]
-            let _ = Command::new("kill")
-                .args(["-9", &child_id.to_string()])
-                .output();
+            let _ = Command::new("kill").args(["-9", &child_id.to_string()]).output();
             let _ = app_wdog.emit("tool://done", ToolDoneEvent {
                 run_id: run_id_wdog,
                 exit_code: -1,
@@ -91,44 +228,39 @@ pub async fn run_tool_command(
         });
     }
 
-    // Stream stdout
     let stdout = child.stdout.take().unwrap();
     let app_out = app.clone();
     let run_id_out = run_id.clone();
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines().flatten() {
             let _ = app_out.emit("tool://output", ToolOutputEvent {
-                run_id: run_id_out.clone(),
-                line,
-                stream: "stdout".into(),
+                run_id: run_id_out.clone(), line, stream: "stdout".into(),
             });
         }
     });
 
-    // Stream stderr
     let stderr = child.stderr.take().unwrap();
     let app_err = app.clone();
     let run_id_err = run_id.clone();
     thread::spawn(move || {
         for line in BufReader::new(stderr).lines().flatten() {
             let _ = app_err.emit("tool://output", ToolOutputEvent {
-                run_id: run_id_err.clone(),
-                line,
-                stream: "stderr".into(),
+                run_id: run_id_err.clone(), line, stream: "stderr".into(),
             });
         }
     });
 
-    // Wait for exit
     let status = child.wait().map_err(|e| e.to_string())?;
-    let _ = app_handle.emit("tool://done", ToolDoneEvent {
-        run_id: run_id_clone,
+    let _ = app.emit("tool://done", ToolDoneEvent {
+        run_id,
         exit_code: status.code().unwrap_or(-1),
         error: None,
     });
 
     Ok(())
 }
+
+// ─── App entry point ───────────────────────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -142,6 +274,8 @@ pub fn run() {
             check_ollama,
             install_ollama,
             run_tool_command,
+            download_gguf,
+            import_gguf_to_ollama,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
