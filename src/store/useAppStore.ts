@@ -1,13 +1,18 @@
 import { create } from "zustand";
 import { loadSettings, saveSettings } from "@/lib/settings";
-import type { Agent, WorkflowRun, RunStep } from "@/types";
+import type { Agent, WorkflowRun, WorkflowStep } from "@/types";
 
 export type Panel = "models" | "agents" | "chat";
 
-interface Settings {
+export interface Settings {
   defaultModel: string;
   agentsDir: string;
   ollamaBaseUrl: string;
+  theme: "dark" | "light" | "system";
+  /** Embedding model for semantic routing (default: nomic-embed-text). */
+  embedModel: string;
+  /** Routing mode exposed in Settings panel. */
+  routingMode: "full" | "no-semantic" | "rules-only";
 }
 
 interface AppState {
@@ -35,7 +40,7 @@ interface AppState {
   // Run
   activeRun: WorkflowRun | null;
   setActiveRun: (r: WorkflowRun) => void;
-  addRunStep: (step: RunStep) => void;
+  addRunStep: (step: WorkflowStep) => void;
   streamBuffer: Record<string, string>;
   appendStream: (agentId: string, chunk: string) => void;
   clearStream: () => void;
@@ -46,6 +51,15 @@ interface AppState {
   loadPersistedSettings: () => Promise<void>;
   updateSettings: (patch: Partial<Settings>) => Promise<void>;
 }
+
+const SETTINGS_DEFAULTS: Settings = {
+  defaultModel: "",
+  agentsDir: "",
+  ollamaBaseUrl: "http://localhost:11434",
+  theme: "dark",
+  embedModel: "nomic-embed-text",
+  routingMode: "full",
+};
 
 export const useAppStore = create<AppState>((set, get) => ({
   activePanel: "models",
@@ -84,22 +98,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   clearStream: () => set({ streamBuffer: {} }),
 
-  settings: {
-    defaultModel: "",
-    agentsDir: "",
-    ollamaBaseUrl: "http://localhost:11434",
-  },
+  settings: SETTINGS_DEFAULTS,
   settingsLoaded: false,
 
   loadPersistedSettings: async () => {
-    const { loadSettings } = await import("@/lib/settings");
     const persisted = await loadSettings();
-    set({ settings: persisted, settingsLoaded: true });
+    // Merge with defaults so new fields added in updates are always present
+    const merged: Settings = { ...SETTINGS_DEFAULTS, ...persisted };
+    set({ settings: merged, settingsLoaded: true });
+    // Apply theme immediately
+    applyTheme(merged.theme);
   },
 
   updateSettings: async (patch) => {
-    const next = { ...get().settings, ...patch };
+    const next: Settings = { ...get().settings, ...patch };
     set({ settings: next });
     await saveSettings(patch);
+    if (patch.theme) applyTheme(patch.theme);
   },
 }));
+
+// ── Theme application ────────────────────────────────────────────────────────────
+
+function applyTheme(theme: Settings["theme"]) {
+  const root = document.documentElement;
+  if (theme === "system") {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", prefersDark ? "dark" : "light");
+  } else {
+    root.setAttribute("data-theme", theme);
+  }
+}
