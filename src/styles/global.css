@@ -1,0 +1,79 @@
+/* AgentForge – Design Tokens */
+
+:root {
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --text-xs:   clamp(0.75rem,  0.7rem  + 0.25vw, 0.875rem);
+  --text-sm:   clamp(0.875rem, 0.8rem  + 0.35vw, 1rem);
+  --text-base: clamp(1rem,     0.95rem + 0.25vw, 1.125rem);
+  --text-lg:   clamp(1.125rem, 1rem    + 0.75vw, 1.5rem);
+  --text-xl:   clamp(1.5rem,   1.2rem  + 1.25vw, 2.25rem);
+
+  --space-1: 0.25rem; --space-2: 0.5rem;  --space-3: 0.75rem;
+  --space-4: 1rem;    --space-6: 1.5rem;  --space-8: 2rem;
+  --space-12: 3rem;   --space-16: 4rem;
+
+  --radius-sm: 0.25rem;  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;  --radius-full: 9999px;
+
+  --transition: 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root, [data-theme="dark"] {
+  --bg:           #0f0f0e;
+  --surface:      #151514;
+  --surface-2:    #1b1a19;
+  --surface-3:    #222120;
+  --border:       #2a2927;
+  --divider:      #222120;
+  --text:         #d4d3d1;
+  --text-muted:   #6e6d6b;
+  --text-faint:   #3d3c3a;
+  --primary:      #4f98a3;
+  --primary-dim:  #31606a;
+  --accent:       #a86fdf;
+  --success:      #6daa45;
+  --warning:      #fdab43;
+  --error:        #dd6974;
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+}
+
+[data-theme="light"] {
+  --bg:           #f7f6f2;
+  --surface:      #f9f8f5;
+  --surface-2:    #fbfbf9;
+  --surface-3:    #f3f0ec;
+  --border:       #d4d1ca;
+  --divider:      #dcd9d5;
+  --text:         #28251d;
+  --text-muted:   #7a7974;
+  --text-faint:   #bab9b4;
+  --primary:      #01696f;
+  --primary-dim:  #cedcd8;
+  --accent:       #7a39bb;
+  --success:      #437a22;
+  --warning:      #da7101;
+  --error:        #a12c7b;
+  --shadow-md: 0 4px 16px oklch(0.2 0.01 80 / 0.08);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+}
+button { cursor: pointer; font: inherit; border: none; background: none; }
+input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border-width:0; }
