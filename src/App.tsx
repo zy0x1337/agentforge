@@ -16,41 +16,54 @@ export default function App() {
     setLocalModels,
     settings,
     settingsLoaded,
+    loadPersistedSettings,
     setAgents,
-    initSettings,
   } = useAppStore();
 
   // Load persisted settings once on mount
   useEffect(() => {
-    initSettings();
-  }, [initSettings]);
+    loadPersistedSettings();
+  }, [loadPersistedSettings]);
 
-  // Poll Ollama health every 8s
+  // Poll Ollama health every 8s (only after settings are loaded)
   useEffect(() => {
+    if (!settingsLoaded) return;
+
     const check = async () => {
-      const running = await isOllamaRunning();
+      const running = await isOllamaRunning(settings.ollamaBaseUrl);
       setOllamaRunning(running);
       if (running) {
-        const models = await listLocalModels().catch(() => []);
+        const models = await listLocalModels(settings.ollamaBaseUrl).catch(() => []);
         setLocalModels(models);
       }
     };
+
     check();
     const interval = setInterval(check, 8000);
     return () => clearInterval(interval);
-  }, [setOllamaRunning, setLocalModels]);
+  }, [settingsLoaded, settings.ollamaBaseUrl, setOllamaRunning, setLocalModels]);
 
-  // Reload agents whenever agentsDir changes (after settings are loaded)
+  // Reload agents whenever agentsDir changes
   useEffect(() => {
-    if (!settingsLoaded || !settings.agentsDir) return;
+    if (!settings.agentsDir) return;
     loadAgents(settings.agentsDir).then(setAgents).catch(console.error);
-  }, [settings.agentsDir, settingsLoaded, setAgents]);
+  }, [settings.agentsDir, setAgents]);
 
-  // Don't render panels until settings are hydrated
+  // Blank screen while settings are being read from disk
   if (!settingsLoaded) {
     return (
-      <div style={{ display: "flex", height: "100dvh", alignItems: "center", justifyContent: "center", background: "var(--bg)", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-        Loading…
+      <div style={{
+        height: "100dvh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg)",
+        color: "var(--text-muted)",
+        fontSize: "var(--text-xs)",
+        fontFamily: "var(--font-mono)",
+        letterSpacing: "0.05em",
+      }}>
+        loading…
       </div>
     );
   }
@@ -65,7 +78,7 @@ export default function App() {
           <>
             {activePanel === "models" && <ModelManager />}
             {activePanel === "agents" && <AgentExplorer />}
-            {activePanel === "chat" && <ChatPanel />}
+            {activePanel === "chat"   && <ChatPanel />}
           </>
         )}
       </main>
