@@ -3,23 +3,23 @@
 export interface AgentFrontmatter {
   name: string;
   description: string;
-  model?: string;                      // e.g. "qwen2.5-coder:7b" — falls back to app default
-  temperature?: number;                // 0.0–1.0
-  triggers?: string[];                 // keyword hints for rule-based routing
-  next_agents?: string[];              // explicit next agents (rule-based)
-  context_mode?: "full" | "summary" | "none"; // how context is passed forward
+  model?: string;
+  temperature?: number;
+  triggers?: string[];
+  next_agents?: string[];
+  context_mode?: "full" | "summary" | "none";
   max_tokens?: number;
-  tools?: string[];                    // future: MCP tool names
+  tools?: string[];
   tags?: string[];
 }
 
 export interface Agent {
-  id: string;               // folder name (slug)
-  path: string;             // absolute path to agent folder
+  id: string;
+  path: string;
   frontmatter: AgentFrontmatter;
-  persona: string;          // body of persona.md
-  prompt?: string;          // body of prompt.md (optional template)
-  workflow?: string;        // body of workflow.md (optional chain definition)
+  persona: string;
+  prompt?: string;
+  workflow?: string;
 }
 
 export interface AgentMessage {
@@ -33,16 +33,17 @@ export interface WorkflowStep {
   agentId: string;
   input: string;
   output?: string;
-  status: "pending" | "running" | "done" | "error";
+  status: "pending" | "running" | "done" | "error" | "aborted";
   contextMode: "full" | "summary" | "none";
 }
 
 export interface WorkflowRun {
   id: string;
   startedAt: number;
+  finishedAt?: number;
   initialPrompt: string;
   steps: WorkflowStep[];
-  status: "running" | "done" | "error";
+  status: "running" | "done" | "error" | "aborted";
 }
 
 // ── Ollama types ──────────────────────────────────────────────────────────────

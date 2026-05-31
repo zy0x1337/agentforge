@@ -1,25 +1,31 @@
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
+import { useHistoryStore } from "@/store/useHistoryStore";
 import { runWorkflow } from "@/lib/workflowRunner";
 import StopButton from "./StopButton";
-import type { Agent } from "@/types";
+import type { Agent, WorkflowRun } from "@/types";
 
 export default function ChatPanel() {
   const {
     agents, settings,
-    setActiveRun, addRunStep, activeRun,
+    addRunStep,
     streamBuffer, appendStream, clearStream,
   } = useAppStore();
 
   const { isRunning, startRun, finishRun } = useWorkflowStore();
+  const { runs, activeRunId, setActiveRunId, addRun } = useHistoryStore();
 
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // The run currently displayed (active selection or latest)
+  const displayRun: WorkflowRun | null =
+    runs.find((r) => r.id === activeRunId) ?? runs[0] ?? null;
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeRun?.steps.length, streamBuffer]);
+  }, [displayRun?.steps.length, streamBuffer]);
 
   const run = async () => {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
@@ -27,18 +33,20 @@ export default function ChatPanel() {
     setInput("");
     clearStream();
 
-    setActiveRun({
+    const newRun: WorkflowRun = {
       id: crypto.randomUUID(),
       startedAt: Date.now(),
       initialPrompt: prompt,
       steps: [],
       status: "running",
-    });
+    };
+    addRun(newRun);
+    setActiveRunId(newRun.id);
 
     const signal = startRun();
 
     try {
-      await runWorkflow(
+      const completed = await runWorkflow(
         prompt,
         agents,
         settings.defaultModel,
@@ -47,6 +55,8 @@ export default function ChatPanel() {
         appendStream,
         signal,
       );
+      // Replace the in-progress run with the finished one
+      addRun(completed);
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,7 +76,19 @@ export default function ChatPanel() {
         alignItems: "center",
         justifyContent: "space-between",
       }}>
-        <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>Agent Run</span>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>Agent Run</span>
+          {displayRun && displayRun.status !== "running" && (
+            <span style={{
+              fontSize: "var(--text-xs)",
+              color: "var(--color-text-faint)",
+              fontFamily: "var(--font-mono)",
+            }}>
+              {displayRun.status}
+              {displayRun.finishedAt && ` · ${Math.round((displayRun.finishedAt - displayRun.startedAt) / 1000)}s`}
+            </span>
+          )}
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
           {settings.defaultModel
             ? <span style={{ fontSize: "var(--text-xs)", color: "var(--color-primary)", fontFamily: "var(--font-mono)" }}>
@@ -76,7 +98,6 @@ export default function ChatPanel() {
                 No default model — set one in Models
               </span>
           }
-          {/* Run status badge */}
           {isRunning && (
             <span style={{
               fontSize: "var(--text-xs)",
@@ -101,7 +122,7 @@ export default function ChatPanel() {
         flexDirection: "column",
         gap: "var(--space-4)",
       }}>
-        {!activeRun && (
+        {!displayRun && (
           <div style={{
             flex: 1,
             display: "flex",
@@ -110,6 +131,7 @@ export default function ChatPanel() {
             flexDirection: "column",
             gap: "var(--space-3)",
             color: "var(--color-text-muted)",
+            marginTop: "var(--space-16)",
           }}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
               <polygon points="5 3 19 12 5 21 5 3" />
@@ -121,10 +143,10 @@ export default function ChatPanel() {
           </div>
         )}
 
-        {activeRun && (
+        {displayRun && (
           <>
-            <UserBubble text={activeRun.initialPrompt} />
-            {activeRun.steps.map((step, i) => (
+            <UserBubble text={displayRun.initialPrompt} />
+            {displayRun.steps.map((step, i) => (
               <AgentBubble
                 key={`${step.agentId}-${i}`}
                 agentId={step.agentId}
@@ -133,7 +155,7 @@ export default function ChatPanel() {
                 agents={agents}
               />
             ))}
-            {isRunning && !activeRun.steps.some((s) => s.status === "running") && (
+            {isRunning && !displayRun.steps.some((s) => s.status === "running") && (
               <div style={{ color: "var(--color-text-muted)", fontSize: "var(--text-xs)" }}>Routing…</div>
             )}
           </>
@@ -141,8 +163,8 @@ export default function ChatPanel() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Stop button floats above the input bar when running */}
-      <div style={{ display: "flex", justifyContent: "center", padding: isRunning ? "var(--space-2) 0" : 0 }}>
+      {/* Stop button */}
+      <div style={{ display: "flex", justifyContent: "center", minHeight: isRunning ? 40 : 0, transition: "min-height var(--transition-interactive)" }}>
         <StopButton />
       </div>
 
@@ -156,9 +178,7 @@ export default function ChatPanel() {
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); }
-          }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); } }}
           placeholder="Enter a prompt… (Shift+Enter for newline)"
           rows={2}
           disabled={isRunning}
@@ -180,13 +200,14 @@ export default function ChatPanel() {
           disabled={!canSubmit}
           aria-label="Run workflow"
           style={{
-            padding: "var(--space-3) var(--space-6)",
+            padding: "var(--space-3) var(--space-5)",
             background: "var(--color-primary)",
             color: "#fff",
             borderRadius: "var(--radius-md)",
             fontSize: "var(--text-sm)",
             opacity: canSubmit ? 1 : 0.4,
             alignSelf: "flex-end",
+            fontWeight: 500,
             transition: "opacity var(--transition-interactive), background var(--transition-interactive)",
           }}
         >
@@ -232,6 +253,7 @@ function AgentBubble({
 }) {
   const agent = agents.find((a) => a.id === agentId);
   const isAborted = status === "aborted";
+  const isError   = status === "error";
 
   return (
     <div>
@@ -247,7 +269,7 @@ function AgentBubble({
         {status === "running" && (
           <span style={{ fontSize: "var(--text-xs)", color: "var(--color-text-muted)" }}>…</span>
         )}
-        {status === "error" && (
+        {isError && (
           <span style={{ fontSize: "var(--text-xs)", color: "var(--color-error)" }}>error</span>
         )}
         {isAborted && (
@@ -257,16 +279,19 @@ function AgentBubble({
       <div style={{
         background: isAborted
           ? "color-mix(in oklab, var(--color-notification) 6%, var(--color-surface-2))"
-          : "var(--color-surface-2)",
-        border: `1px solid ${isAborted
-          ? "oklch(from var(--color-notification) l c h / 0.2)"
-          : "oklch(from var(--color-text) l c h / 0.08)"
+          : isError
+            ? "color-mix(in oklab, var(--color-error) 6%, var(--color-surface-2))"
+            : "var(--color-surface-2)",
+        border: `1px solid ${
+          isAborted ? "oklch(from var(--color-notification) l c h / 0.2)"
+          : isError  ? "oklch(from var(--color-error) l c h / 0.2)"
+          :            "oklch(from var(--color-text) l c h / 0.08)"
         }`,
         borderRadius: "var(--radius-lg)",
         padding: "var(--space-4)",
         fontSize: "var(--text-sm)",
         lineHeight: 1.7,
-        color: isAborted ? "var(--color-text-muted)" : "var(--color-text)",
+        color: (isAborted || isError) ? "var(--color-text-muted)" : "var(--color-text)",
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
         maxWidth: "85%",
