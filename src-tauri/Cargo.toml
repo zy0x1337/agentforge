@@ -18,18 +18,28 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
-tauri-plugin-fs = "2"
-tauri-plugin-shell = "2"
-tauri-plugin-http = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-store = "2"
-serde = { version = "1", features = ["derive"] }
+tauri        = { version = "2", features = [] }
+tauri-plugin-fs      = "2"
+tauri-plugin-shell   = "2"
+tauri-plugin-http    = "2"
+tauri-plugin-dialog  = "2"
+tauri-plugin-store   = "2"
+serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# HTTP client used by download_gguf (sync, no extra async runtime needed).
+# Keep ureq 2.x — matches the existing streaming implementation in lib.rs.
+ureq = { version = "2", features = ["json"] }
+
+# SHA-256 verification for downloaded GGUF files.
+sha2 = "0.10"
+
+# Atomic bool used for per-download cancellation flags.
+# (std::sync::atomic is enough; no extra crate required)
+
 [profile.release]
-panic = "abort"
+panic        = "abort"
 codegen-units = 1
-lto = true
-opt-level = "s"
-strip = true
+lto          = true
+opt-level    = "s"
+strip        = true
