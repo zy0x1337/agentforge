@@ -12,10 +12,12 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 
 - **Model Manager** — View installed models, download popular ones with a single click via Ollama, pull any custom model by name, and set a default model for the app
 - **Agent Explorer** — Open any folder as an agents directory; every subfolder becomes an agent defined by `.md` files with YAML frontmatter
+- **Inline MD Editor** — CodeMirror 6 split-pane editor inside Agent Explorer: syntax-highlighted markdown + YAML, live preview, structured Frontmatter Panel, dirty state (`●`), `Ctrl+S` to save, per-tab revert
 - **Workflow Runner** — Enter a prompt; the router selects the best-matching agent, executes it, and passes structured output to the next agent in the chain
+- **Workflow Graph** — ReactFlow canvas that visualises the agent topology in real time during a run (animated edges, per-node status) and as a static dependency map when idle
 - **Streaming UI** — Every agent step streams output live as a chat bubble in real time
 - **Abort / Stop** — Cancel a running workflow at any point; the current step is marked `aborted` and the run is preserved in history
-- **Run History** — Every completed or aborted run is stored in the sidebar with status indicator, timestamp, duration, and the agent chain that ran
+- **Run History** — Every completed or aborted run is stored in the sidebar; clicking an entry opens the Graph panel showing that run's execution path
 - **Settings Panel** — Slide-over drawer with sections for LLM, Agents, Routing mode, Appearance (dark/light/system), and diagnostics (embedding cache). All changes persist immediately
 - **Persistent Settings** — Default model, agents directory, Ollama base URL, theme, embedding model, and routing mode are saved to disk via `tauri-plugin-store` and restored on next launch
 - **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
@@ -127,28 +129,40 @@ agentforge/
 │   ├── styles/
 │   │   └── global.css            # Design tokens (CSS custom properties)
 │   ├── store/
-│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state, settings (theme, embedModel, routingMode)
+│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state, settings
 │   │   ├── useHistoryStore.ts    # Zustand: run history (last 50), active run selection
-│   │   └── useWorkflowStore.ts   # Zustand: AbortController lifecycle (startRun / abort / finishRun)
+│   │   ├── useWorkflowStore.ts   # Zustand: AbortController lifecycle
+│   │   └── useGraphStore.ts      # Zustand: ReactFlow nodes/edges derived from active run
 │   ├── types/
 │   │   └── index.ts              # TypeScript interfaces
 │   ├── lib/
-│   │   ├── ollama.ts             # Ollama REST API client (all functions accept AbortSignal)
+│   │   ├── ollama.ts             # Ollama REST API client
 │   │   ├── agentFs.ts            # Agent folder reader/writer (Tauri FS)
-│   │   ├── router.ts             # Agent routing (keyword → semantic embeddings → LLM fallback)
+│   │   ├── router.ts             # Agent routing (keyword → semantic → LLM fallback)
 │   │   ├── embeddings.ts         # Embedding cache (nomic-embed-text via Ollama)
 │   │   ├── workflowRunner.ts     # Agent chain executor (abort-aware, context budgeting)
+│   │   ├── graphLayout.ts        # dagre layout helpers for WorkflowGraph
 │   │   └── settings.ts           # Settings load/save via tauri-plugin-store
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx       # Nav + run history list + Ollama status + settings trigger
+│       │   ├── Sidebar.tsx       # Nav (Models/Agents/Run/Graph) + run history + Ollama status
 │       │   └── OllamaGate.tsx    # "Ollama not found" screen with winget install
 │       ├── Settings/
 │       │   └── SettingsPanel.tsx # Slide-over drawer: LLM, Agents, Routing, Appearance, Diagnostics
 │       ├── ModelManager/
 │       │   └── ModelManager.tsx  # Browse, download, and manage models
 │       ├── AgentExplorer/
-│       │   └── AgentExplorer.tsx # Navigate agent folders, view/edit agents
+│       │   └── AgentExplorer.tsx # Navigate agent folders; opens AgentEditor on selection
+│       ├── AgentEditor/
+│       │   ├── AgentEditor.tsx         # CodeMirror 6 split-pane: editor + live preview
+│       │   ├── AgentEditor.module.css
+│       │   ├── FrontmatterPanel.tsx    # Structured KV editor for persona.md YAML frontmatter
+│       │   ├── FrontmatterPanel.module.css
+│       │   └── useEditorStore.ts       # Zustand: open files, dirty map, active tab, save/revert
+│       ├── WorkflowGraph/
+│       │   ├── WorkflowGraph.tsx       # ReactFlow canvas (live run mode + static preview)
+│       │   ├── AgentNode.tsx           # Custom node: 5 states (pending/running/done/error/aborted)
+│       │   └── EdgeWithLabel.tsx       # Animated edge with context_mode label
 │       └── ChatPanel/
 │           ├── ChatPanel.tsx     # Run workflows, stream output, display history
 │           └── StopButton.tsx    # Floating stop button (visible only while running)
@@ -156,12 +170,12 @@ agentforge/
 ├── src-tauri/                    # Rust backend (Tauri v2)
 │   ├── Cargo.toml
 │   ├── build.rs
-│   ├── tauri.conf.json           # App config, permissions, bundle
+│   ├── tauri.conf.json
 │   └── src/
 │       ├── main.rs
 │       └── lib.rs                # Tauri commands: check_ollama, install_ollama
 │
-└── agents/                       # Example agent pack (or point to your own folder)
+└── agents/                       # Example agent pack
     ├── README.md
     ├── router/
     ├── coder/
@@ -209,6 +223,7 @@ next_agents:
   - reviewer
 context_mode: summary   # "full" | "summary" | "none"
 temperature: 0.3
+max_tokens: 4096
 ---
 
 You are a senior TypeScript developer focused on React and clean architecture.
@@ -288,7 +303,7 @@ This agent may run linting and test suites.
 | `triggers` | `string[]` | — | Keywords for trigger-based routing |
 | `next_agents` | `string[]` | — | Agent IDs (folder names) to activate after this agent |
 | `context_mode` | `"full" \| "summary" \| "none"` | — | How much context is forwarded (default: `summary`) |
-| `temperature` | `number` | — | LLM temperature 0.0–1.0 (default: `0.7`) |
+| `temperature` | `number` | — | LLM temperature 0.0–2.0 (default: `0.7`) |
 | `max_tokens` | `number` | — | Maximum output tokens (default: `2048`) |
 
 ### Routing Logic
@@ -310,6 +325,79 @@ The router selects an agent in three stages (configurable in Settings → Routin
 ### Abort Behaviour
 
 Pressing **Stop** during a run calls `AbortController.abort()`. The signal propagates through the entire call stack — `runWorkflow` → `chatStream` / `chat` → `fetch()`. The stream reader is cancelled in a `finally` block regardless of how the request ends. The interrupted step is marked `aborted` and the run is pushed to history with `status: "aborted"` and `finishedAt` set.
+
+---
+
+## Inline MD Editor
+
+Selecting an agent in the Agent Explorer opens the **AgentEditor** — a full CodeMirror 6 split-pane editor.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [persona.md ●] [prompt.md] [workflow.md] [tools.md]  [💾] [↺]  │  ← tab bar
+├──────────────────────────────────┬───────────────────────────────┤
+│                                  │                               │
+│   CodeMirror 6                   │   Live MD preview             │  FM panel
+│   (markdown + yaml highlighting) │   (marked + DOMPurify)        │  →
+│                                  │                               │
+└──────────────────────────────────┴───────────────────────────────┘
+```
+
+### Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+S` / `Cmd+S` | Save active tab to disk |
+| `Ctrl+Z` / `Cmd+Z` | Undo (CodeMirror history) |
+| `Ctrl+Shift+Z` | Redo |
+
+### Frontmatter Panel
+
+Available on the **persona.md** tab only. Provides structured controls for every known frontmatter field without requiring manual YAML editing:
+
+- `name`, `description` — text inputs
+- `model` — text input with `<datalist>` autocomplete from installed Ollama models
+- `context_mode` — dropdown (`full` / `summary` / `none`)
+- `temperature` — range slider (0.00–2.00, step 0.05) with live numeric readout
+- `max_tokens` — number input (256–32768, step 256)
+- `triggers` — tag input (Enter or comma to add, `×` to remove)
+- `next_agents` — tag input (same)
+- Unknown fields — generic text inputs
+
+All changes write back to the `persona.md` content immediately; the CodeMirror view stays in sync.
+
+### Dirty State
+
+Each tab shows a `●` indicator when it has unsaved changes. The **Save all** button is enabled only when at least one tab is dirty. Individual tabs can be reverted via the `↺` button.
+
+---
+
+## Workflow Graph
+
+The **Graph** panel (4th nav item in the sidebar) renders a live ReactFlow canvas powered by a dagre `TB` layout.
+
+### Modes
+
+| Mode | Trigger | What's shown |
+|------|---------|--------------|
+| **Static preview** | No run active | Agent dependency graph built from `next_agents` frontmatter |
+| **Live run** | Workflow executing | Same graph with real-time node state: pending → running → done / error |
+
+### Node States
+
+| State | Visual |
+|-------|--------|
+| `pending` | Muted, 60% opacity |
+| `running` | Teal border + glow + animated pulse ring |
+| `done` | Green border |
+| `error` | Red border |
+| `aborted` | 45% opacity, neutral |
+
+Clicking a **run history entry** in the sidebar navigates directly to the Graph panel and shows that run's execution state.
+
+> `prefers-reduced-motion` is respected — pulse ring and edge animations are disabled automatically.
 
 ---
 
@@ -341,7 +429,7 @@ The sidebar maintains a chronological list of runs (newest first, max 50). Each 
 - **Duration** — elapsed time once finished (e.g. `18s`, `2m 4s`)
 - **Agent chain** — `router → coder → reviewer` (deduplicated agent IDs)
 
-Clicking a history entry switches the Chat Panel to display that run. History is in-memory only and resets on app restart (persistent history: Phase 4).
+Clicking a history entry opens the **Graph panel** showing that run's execution path. History is in-memory only and resets on app restart (persistent history: Phase 4).
 
 ---
 
@@ -379,7 +467,7 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 
 ## Roadmap
 
-**Phase 1 — Core**
+**Phase 1 — Core** ✅
 - [x] Tauri v2 + React/TS boilerplate
 - [x] Ollama REST client (list, pull with progress, delete, streaming chat)
 - [x] Agent FS reader (frontmatter parsing via gray-matter)
@@ -389,20 +477,20 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 - [x] Agent Explorer UI
 - [x] Chat / Run Panel UI
 
-**Phase 2 — Stability** ✅ complete
+**Phase 2 — Stability** ✅
 - [x] Settings persistence (`tauri-plugin-store`)
 - [x] Example agent pack (Router, Coder, Reviewer, Summarizer)
-- [x] Abort signal for running workflows (end-to-end: Stop button → `AbortController` → `fetch()`)
+- [x] Abort signal for running workflows (Stop button → `AbortController` → `fetch()`)
 - [x] Run history in sidebar (status, duration, agent chain, click-to-view)
 - [x] `workflow.md` sequential step parser
 - [x] Semantic routing via embeddings (`nomic-embed-text`)
 - [x] Settings panel UI (LLM, Agents, Routing mode, Appearance, Diagnostics)
 
-**Phase 3 — Power Features**
-- [ ] Workflow graph visualization (ReactFlow)
-- [ ] Inline MD editor in Agent Explorer (CodeMirror 6)
-- [ ] `tools.md` shell execution (Rust command, allowlist)
-- [ ] Hugging Face GGUF browser
+**Phase 3 — Power Features** *(in progress)*
+- [x] Workflow graph visualization (ReactFlow + dagre, live + static modes)
+- [x] Inline MD editor in Agent Explorer (CodeMirror 6, live preview, Frontmatter Panel, dirty state, Ctrl+S)
+- [ ] `tools.md` shell execution (Rust command, allowlist, timeout)
+- [ ] Hugging Face GGUF browser + direct download
 - [ ] Parallel agent execution
 
 **Phase 4 — Distribution**
@@ -422,7 +510,9 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 | Build tool | Vite 5 |
 | Backend | Rust 1.77+ |
 | LLM runtime | Ollama |
-| MD parsing | gray-matter (frontmatter) + marked (render) |
+| Graph visualization | @xyflow/react + dagre |
+| MD editor | CodeMirror 6 (`@codemirror/lang-markdown`, `@codemirror/lang-yaml`) |
+| MD parsing | gray-matter (frontmatter), marked (render), DOMPurify (sanitize) |
 | Tauri plugins | fs, shell, http, dialog, store |
 
 ---
