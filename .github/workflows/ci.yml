@@ -1,0 +1,53 @@
+# ───────────────────────────────────────────────────────────────────────────────
+# CI — type-check + lint on every PR and push to main
+# Fast path: no Tauri/Rust compile, just the TypeScript frontend.
+# Full Windows build only runs in release.yml on v* tags.
+# ───────────────────────────────────────────────────────────────────────────────
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'src-tauri/src/**'
+      - 'package.json'
+      - 'tsconfig*.json'
+      - 'vite.config.ts'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-lint:
+    name: Type-check & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm type-check
+
+      - name: Lint
+        run: pnpm lint
