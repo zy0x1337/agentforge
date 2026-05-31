@@ -14,6 +14,9 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 - **Agent Explorer** — Open any folder as an agents directory; every subfolder becomes an agent defined by `.md` files with YAML frontmatter
 - **Workflow Runner** — Enter a prompt; the router selects the best-matching agent, executes it, and passes structured output to the next agent in the chain
 - **Streaming UI** — Every agent step streams output live as a chat bubble in real time
+- **Abort / Stop** — Cancel a running workflow at any point; the current step is marked `aborted` and the run is preserved in history
+- **Run History** — Every completed or aborted run is stored in the sidebar with status indicator, timestamp, duration, and the agent chain that ran
+- **Persistent Settings** — Default model, agents directory, and Ollama base URL are saved to disk via `tauri-plugin-store` and restored on next launch
 - **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
 
 ---
@@ -28,7 +31,7 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 | **Ollama** | latest | [ollama.com/download](https://ollama.com/download) |
 | **WebView2** | any | Pre-installed on Windows 10 22H2+ / Windows 11 |
 
-> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **"Desktop development with C++"**.
+> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **“Desktop development with C++”**.
 
 ---
 
@@ -65,7 +68,18 @@ pnpm tauri:dev
 
 > **Note:** The first build takes several minutes while Cargo compiles all Rust dependencies. Subsequent starts are significantly faster thanks to incremental compilation.
 
-### 5. Frontend-only development (optional)
+### 5. First launch — required setup
+
+On first launch you will need to configure two settings (accessible via the Settings panel):
+
+| Setting | What to enter |
+|---------|---------------|
+| **Agents directory** | Absolute path to a folder containing agent subfolders, e.g. `C:\Users\you\agentforge\agents` |
+| **Default model** | An Ollama model name you have pulled, e.g. `llama3.2:3b` |
+
+Settings are saved automatically and restored on next launch.
+
+### 6. Frontend-only development (optional)
 
 ```bash
 pnpm dev
@@ -104,28 +118,32 @@ agentforge/
 │
 ├── src/                          # React + TypeScript frontend
 │   ├── main.tsx                  # ReactDOM entry
-│   ├── App.tsx                   # Root component, Ollama health polling
+│   ├── App.tsx                   # Root component, settings load, Ollama health polling
 │   ├── styles/
 │   │   └── global.css            # Design tokens (CSS custom properties)
 │   ├── store/
-│   │   └── useAppStore.ts        # Zustand global state
+│   │   ├── useAppStore.ts        # Zustand: models, agents, UI state
+│   │   ├── useHistoryStore.ts    # Zustand: run history (last 50), active run selection
+│   │   └── useWorkflowStore.ts   # Zustand: AbortController lifecycle (startRun / abort / finishRun)
 │   ├── types/
 │   │   └── index.ts              # TypeScript interfaces
 │   ├── lib/
-│   │   ├── ollama.ts             # Ollama REST API client
+│   │   ├── ollama.ts             # Ollama REST API client (all functions accept AbortSignal)
 │   │   ├── agentFs.ts            # Agent folder reader/writer (Tauri FS)
 │   │   ├── router.ts             # Agent routing (keyword + LLM fallback)
-│   │   └── workflowRunner.ts     # Agent chain executor
+│   │   ├── workflowRunner.ts     # Agent chain executor (abort-aware, context budgeting)
+│   │   └── settings.ts           # Settings load/save via tauri-plugin-store
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx       # Navigation + Ollama status indicator
-│       │   └── OllamaGate.tsx    # "Ollama not found" screen
+│       │   ├── Sidebar.tsx       # Nav + run history list + Ollama status footer
+│       │   └── OllamaGate.tsx    # “Ollama not found” screen with winget install
 │       ├── ModelManager/
 │       │   └── ModelManager.tsx  # Browse, download, and manage models
 │       ├── AgentExplorer/
 │       │   └── AgentExplorer.tsx # Navigate agent folders, view/edit agents
 │       └── ChatPanel/
-│           └── ChatPanel.tsx     # Run workflows, stream agent output
+│           ├── ChatPanel.tsx     # Run workflows, stream output, display history
+│           └── StopButton.tsx    # Floating stop button (visible only while running)
 │
 ├── src-tauri/                    # Rust backend (Tauri v2)
 │   ├── Cargo.toml
@@ -133,9 +151,10 @@ agentforge/
 │   ├── tauri.conf.json           # App config, permissions, bundle
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs                # Tauri commands (install_ollama, etc.)
+│       └── lib.rs                # Tauri commands: check_ollama, install_ollama
 │
-└── agents/                       # Example agents (or point to your own folder)
+└── agents/                       # Example agent pack (or point to your own folder)
+    ├── README.md
     ├── router/
     ├── coder/
     ├── reviewer/
@@ -159,14 +178,14 @@ Agent A  →  executes, produces structured output
     ↓
 Agent B  →  receives context + output, executes next step
     ↓
-...  →  chain ends when no next_agents are defined or output signals completion
+…  →  chain ends when no next_agents are defined or output signals completion
 ```
 
 ### File Schema
 
 #### `persona.md` *(required)*
 
-Defines the agent's identity, capabilities, and routing metadata.
+Defines the agent’s identity, capabilities, and routing metadata.
 
 ```markdown
 ---
@@ -230,7 +249,7 @@ steps:
   - agent: coder
   - agent: reviewer
   - agent: summarizer
-mode: sequential   # "sequential" | "parallel"
+mode: sequential   # "sequential" | "parallel" (parallel: Phase 3)
 ---
 
 This workflow creates and reviews code in three steps.
@@ -268,14 +287,32 @@ This agent may run linting and test suites.
 
 The router selects an agent in two stages:
 
-1. **Keyword match** — Each agent's `triggers` array is scored against the prompt. The highest-scoring agent wins.
-2. **LLM fallback** — On a tie or no match, the default model is asked: *"Which of these agents is best suited for: [prompt]?"*
+1. **Keyword match** — Each agent’s `triggers` array is scored against the prompt. The highest-scoring agent wins.
+2. **LLM fallback** — On a tie or no match, the default model is asked: *“Which of these agents is best suited for: [prompt]?”*
+
+### Abort Behaviour
+
+Pressing **Stop** during a run calls `AbortController.abort()`. The signal propagates through the entire call stack — `runWorkflow` → `chatStream` / `chat` → `fetch()`. The stream reader is cancelled in a `finally` block regardless of how the request ends. The interrupted step is marked `aborted` and the run is pushed to history with `status: "aborted"` and `finishedAt` set.
+
+---
+
+## Run History
+
+The sidebar maintains a chronological list of runs (newest first, max 50). Each entry shows:
+
+- **Status dot** — green (done), gold/pulsing (running), red (error), grey (aborted)
+- **Prompt preview** — first two lines of the initial prompt
+- **Time** — start time in `HH:MM` format
+- **Duration** — elapsed time once finished (e.g. `18s`, `2m 4s`)
+- **Agent chain** — `router → coder → reviewer` (deduplicated agent IDs)
+
+Clicking a history entry switches the Chat Panel to display that run. History is in-memory only and resets on app restart (persistent history: Phase 4).
 
 ---
 
 ## Configuration
 
-App settings are persisted via `tauri-plugin-store`:
+App settings are persisted to `%APPDATA%\AgentForge\settings.json` via `tauri-plugin-store`:
 
 | Setting | Description | Default |
 |---------|-------------|---------|
@@ -319,31 +356,34 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 
 ## Roadmap
 
-**Phase 1 — Core (done)**
+**Phase 1 — Core**
 - [x] Tauri v2 + React/TS boilerplate
 - [x] Ollama REST client (list, pull with progress, delete, streaming chat)
 - [x] Agent FS reader (frontmatter parsing via gray-matter)
 - [x] Keyword + LLM-based router
-- [x] Workflow runner with agent chaining
+- [x] Workflow runner with agent chaining and context budgeting
 - [x] Model Manager UI
 - [x] Agent Explorer UI
 - [x] Chat / Run Panel UI
 
 **Phase 2 — Stability**
-- [ ] Settings persistence (`tauri-plugin-store`)
-- [ ] Example agent pack (Router, Coder, Reviewer, Summarizer)
-- [ ] Semantic routing via embeddings (`nomic-embed-text`)
+- [x] Settings persistence (`tauri-plugin-store`)
+- [x] Example agent pack (Router, Coder, Reviewer, Summarizer)
+- [x] Abort signal for running workflows (end-to-end: Stop button → `AbortController` → `fetch()`)
+- [x] Run history in sidebar (status, duration, agent chain, click-to-view)
 - [ ] `workflow.md` sequential step parser
-- [ ] Abort signal for running workflows
-- [ ] Run history in sidebar
+- [ ] Semantic routing via embeddings (`nomic-embed-text`)
+- [ ] Settings panel UI
 
 **Phase 3 — Power Features**
 - [ ] Workflow graph visualization (ReactFlow)
 - [ ] Inline MD editor in Agent Explorer (CodeMirror 6)
 - [ ] `tools.md` shell execution (Rust command, allowlist)
 - [ ] Hugging Face GGUF browser
+- [ ] Parallel agent execution
 
 **Phase 4 — Distribution**
+- [ ] Persistent run history (saved to disk)
 - [ ] App icon + bundle metadata
 - [ ] GitHub Actions release build (`.exe` as release asset)
 
@@ -360,7 +400,7 @@ Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capab
 | Backend | Rust 1.77+ |
 | LLM runtime | Ollama |
 | MD parsing | gray-matter (frontmatter) + marked (render) |
-| Tauri plugins | fs, shell, http, dialog |
+| Tauri plugins | fs, shell, http, dialog, store |
 
 ---
 
