@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "dev.agentforge.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -36,15 +36,28 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "shortDescription": "Browse local LLMs and orchestrate agent workflows on Windows",
+    "longDescription": "AgentForge lets you browse, download and manage open-source LLMs via Ollama, then build automated multi-agent workflows defined by Markdown files. Agents activate each other, pass context forward, and run sequentially or in parallel — all locally, no cloud required.",
+    "copyright": "Copyright © 2026 AgentForge Contributors",
+    "homepage": "https://github.com/zy0x1337/agentforge",
+    "category": "DeveloperTool",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "license": "../LICENSE",
+        "headerImage": "../assets/installer/nsis-header.bmp",
+        "sidebarImage": "../assets/installer/nsis-sidebar.bmp",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico"
       },
       "wix": {
-        "language": "en-US"
+        "language": "en-US",
+        "upgradeCode": "5F3B2A1C-9D4E-4F7A-B8C6-2E0A1D3F5B7C"
       }
-    }
+    },
+    "publisher": "AgentForge Contributors",
+    "resources": []
   },
   "plugins": {
     "fs": {
