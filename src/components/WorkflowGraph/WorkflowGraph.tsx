@@ -1,17 +1,15 @@
 /**
  * WorkflowGraph — ReactFlow-based visualization of a WorkflowRun.
  *
- * Features:
- *  - Custom AgentNode showing name, model, status badge
- *  - Animated pulse ring on the currently running node
- *  - Animated edge with label (context mode) for active transitions
- *  - Auto-layout via dagre (top-to-bottom)
- *  - Toolbar: fit-view, zoom in/out, minimap toggle
- *  - Static preview mode: renders agent graph from frontmatter when no run is active
+ * Node types
+ * ──────────
+ * agent        — single sequential agent step (AgentNode)
+ * parallelHub  — fan-out header of a parallel group (ParallelHubNode)
+ * mergeFanIn   — fan-in footer of a parallel group (MergeFanInNode)
  *
- * Dependencies (add to package.json):
- *   @xyflow/react  ^12
- *   dagre          ^0.8
+ * Edge types
+ * ──────────
+ * labeled      — animated edge with optional context-mode label (EdgeWithLabel)
  */
 
 import {
@@ -24,29 +22,40 @@ import {
   useReactFlow,
   type NodeTypes,
   type EdgeTypes,
-} from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
-import { useEffect, useState } from "react";
-import { AgentNode } from "./AgentNode";
-import { EdgeWithLabel } from "./EdgeWithLabel";
-import { useGraphStore } from "@/store/useGraphStore";
-import { useAppStore } from "@/store/useAppStore";
-import { useHistoryStore } from "@/store/useHistoryStore";
-import { buildStaticGraph } from "@/lib/graphLayout";
-import styles from "./WorkflowGraph.module.css";
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import { useEffect, useState } from 'react';
+import { AgentNode }        from './AgentNode';
+import { ParallelHubNode }  from './ParallelHubNode';
+import { MergeFanInNode }   from './MergeFanInNode';
+import { EdgeWithLabel }    from './EdgeWithLabel';
+import { useGraphStore }    from '@/store/useGraphStore';
+import { useWorkflowStore } from '@/store/useWorkflowStore';
+import { useAppStore }      from '@/store/useAppStore';
+import { useHistoryStore }  from '@/store/useHistoryStore';
+import { buildStaticGraph } from '@/lib/graphLayout';
+import styles from './WorkflowGraph.module.css';
 
-// Register custom node and edge types outside render to avoid re-registration
-const NODE_TYPES: NodeTypes = { agent: AgentNode };
-const EDGE_TYPES: EdgeTypes = { labeled: EdgeWithLabel };
+// ── Custom type registrations (defined outside render — stable references) ──
+
+const NODE_TYPES: NodeTypes = {
+  agent:       AgentNode,
+  parallelHub: ParallelHubNode,
+  mergeFanIn:  MergeFanInNode,
+};
+
+const EDGE_TYPES: EdgeTypes = {
+  labeled: EdgeWithLabel,
+};
 
 // ── Inner component (needs ReactFlowProvider context) ───────────────────────
 
 function GraphInner() {
   const { fitView } = useReactFlow();
   const { nodes, edges } = useGraphStore();
-  const { activeRun } = useAppStore();
+  const { activeRun }    = useWorkflowStore();
   const { activeRunId, history } = useHistoryStore();
-  const { agents } = useAppStore();
+  const { agents }       = useAppStore();
 
   const [showMinimap, setShowMinimap] = useState(true);
 
@@ -62,7 +71,7 @@ function GraphInner() {
     history.find((r) => r.id === activeRunId) ??
     null;
 
-  // Static graph: render agent connections from frontmatter when no run is shown
+  // Static preview: render agent connections from frontmatter when no run is shown
   const staticGraph = !displayRun && agents.length > 0
     ? buildStaticGraph(agents)
     : null;
@@ -78,23 +87,25 @@ function GraphInner() {
       <div className={styles.toolbar}>
         <span className={styles.toolbarLabel}>
           {displayRun
-            ? `Run · ${displayRun.status === "running" ? "live" : displayRun.status}`
-            : "Agent graph"}
+            ? `Run · ${displayRun.status === 'running' ? 'live' : displayRun.status}`
+            : 'Agent graph'}
         </span>
         <div className={styles.toolbarActions}>
           <button
             className={styles.toolBtn}
             onClick={() => fitView({ padding: 0.2, duration: 400 })}
             title="Fit view"
+            aria-label="Fit view"
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <path d="M1 6V1h5M10 1h5v5M15 10v5h-5M6 15H1v-5" />
             </svg>
           </button>
           <button
-            className={`${styles.toolBtn} ${showMinimap ? styles.toolBtnActive : ""}`}
+            className={`${styles.toolBtn} ${showMinimap ? styles.toolBtnActive : ''}`}
             onClick={() => setShowMinimap((v) => !v)}
             title="Toggle minimap"
+            aria-label="Toggle minimap"
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
               <rect x="1" y="1" width="14" height="14" rx="2" />
@@ -109,8 +120,8 @@ function GraphInner() {
       {isEmpty && (
         <div className={styles.empty}>
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="var(--text-faint)" strokeWidth="1.2" strokeLinecap="round">
-            <circle cx="8" cy="16" r="4" />
-            <circle cx="24" cy="8" r="4" />
+            <circle cx="8"  cy="16" r="4" />
+            <circle cx="24" cy="8"  r="4" />
             <circle cx="24" cy="24" r="4" />
             <path d="M12 14.5l8-5M12 17.5l8 5" />
           </svg>
@@ -153,17 +164,26 @@ function GraphInner() {
   );
 }
 
-function minimapNodeColor(node: { data: { status?: string } }) {
+function minimapNodeColor(node: { type?: string; data: { status?: string } }) {
+  // Hub and merge nodes get distinct minimap tints
+  if (node.type === 'parallelHub' || node.type === 'mergeFanIn') {
+    switch (node.data?.status) {
+      case 'running': return 'var(--warning)';
+      case 'done':    return 'var(--success)';
+      case 'error':   return 'var(--error)';
+      default:        return 'var(--primary)';
+    }
+  }
   switch (node.data?.status) {
-    case "running":  return "var(--warning)";
-    case "done":     return "var(--success)";
-    case "error":    return "var(--error)";
-    case "aborted":  return "var(--text-faint)";
-    default:         return "var(--surface-dynamic)";
+    case 'running':  return 'var(--warning)';
+    case 'done':     return 'var(--success)';
+    case 'error':    return 'var(--error)';
+    case 'aborted':  return 'var(--text-faint)';
+    default:         return 'var(--surface-dynamic)';
   }
 }
 
-// ── Public export (wraps with Provider) ─────────────────────────────────────
+// ── Public export ────────────────────────────────────────────────────────────
 
 export function WorkflowGraph() {
   return (
