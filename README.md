@@ -4,7 +4,7 @@
 
 AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https://ollama.com) as the local LLM backend. Folders containing `.md` files define self-contained **agents** that can activate each other, pass context forward, and automatically decompose complex tasks into sequential or parallel steps.
 
-![License](https://img.shields.io/badge/license-private-red) ![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-18-61dafb) ![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange)
+![License](https://img.shields.io/badge/license-MIT-green) ![CI](https://img.shields.io/github/actions/workflow/status/zy0x1337/agentforge/ci.yml?label=CI) ![Release](https://img.shields.io/github/v/release/zy0x1337/agentforge?label=Release) ![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-18-61dafb) ![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange)
 
 ---
 
@@ -20,10 +20,30 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 - **Workflow Graph** — ReactFlow canvas that visualises the agent topology in real time (animated edges, per-node status) and as a static dependency map when idle
 - **Streaming UI** — Every agent step streams output live as a chat bubble
 - **Abort / Stop** — Cancel a running workflow at any point; `AbortController` signal propagates through all in-flight parallel streams simultaneously
-- **Run History** — Every completed or aborted run is stored in the sidebar; clicking an entry opens the Graph panel showing that run's execution path
+- **Run History** — Every completed or aborted run is persisted to disk and shown in a sidebar; clicking an entry re-opens the Graph panel for that run
 - **Settings Panel** — Slide-over drawer: LLM, Agents, Routing mode, Appearance, Diagnostics. All changes persist immediately
 - **Persistent Settings** — Default model, agents directory, Ollama base URL, theme, embedding model, and routing mode saved via `tauri-plugin-store`
 - **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
+
+---
+
+## Installation
+
+### Download (recommended)
+
+1. Go to the [**Releases**](https://github.com/zy0x1337/agentforge/releases) page
+2. Download `AgentForge_<version>_x64-setup.exe`
+3. Run the installer — no admin rights required (installs to user profile)
+4. Make sure [Ollama](https://ollama.com/download) is installed and running
+5. On first launch, follow the **Setup** instructions below
+
+> **MSI package** (`AgentForge_<version>_x64_en-US.msi`) is also available for enterprise / GPO deployment.
+>
+> **SHA-256 checksums** for every release asset are attached as `checksums.txt`.
+
+### Build from source
+
+See [Getting Started](#getting-started) below.
 
 ---
 
@@ -99,9 +119,51 @@ pnpm tauri:build
 Output in `src-tauri/target/release/bundle/`:
 
 ```
-agentforge_0.1.0_x64-setup.exe   ← NSIS installer
-agentforge_0.1.0_x64.msi         ← MSI package
+AgentForge_0.1.0_x64-setup.exe   ← NSIS installer
+AgentForge_0.1.0_x64_en-US.msi   ← MSI package
 ```
+
+---
+
+## CI / CD
+
+All pipelines live in [`.github/workflows/`](.github/workflows/).
+
+| Workflow | Trigger | What it does |
+|----------|---------|-------------|
+| **CI** (`ci.yml`) | Every PR + push to `main` | `pnpm type-check` + `pnpm lint` on ubuntu-latest (fast — no Rust compile) |
+| **Release** (`release.yml`) | `git push origin v*.*.*` | Windows x64 build → NSIS `.exe` + WiX `.msi` → GitHub Release + `checksums.txt` |
+| **Icon Generator** (`icon-gen.yml`) | `icon.svg` changed on `main` | Regenerates all PNG/ICO/ICNS rasters and commits them back |
+
+**Dependabot** runs every Monday at 09:00 CET and opens grouped PRs for GitHub Actions, npm, and Cargo updates. Major version bumps require manual review.
+
+### Creating a release
+
+```bash
+# Bump version in tauri.conf.json + Cargo.toml + package.json first, then:
+git tag v0.2.0
+git push origin v0.2.0
+# → GitHub Actions builds the installer and creates the release automatically
+```
+
+Pre-release tags (e.g. `v0.2.0-beta.1`) are automatically marked as pre-releases on GitHub.
+
+### Signing key setup (one-time)
+
+Required before the first `git tag` push. Store both values as repository secrets:
+
+```bash
+# Generate key pair
+npx @tauri-apps/cli signer generate -w ~/.tauri/agentforge.key
+
+# Base64-encode the private key and copy to clipboard
+base64 -w 0 ~/.tauri/agentforge.key   # Linux / WSL
+# → GitHub → Settings → Secrets → Actions:
+#   TAURI_SIGNING_PRIVATE_KEY         ← paste the base64 output
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD ← passphrase (empty string OK for dev)
+```
+
+> `GITHUB_TOKEN` is injected automatically — no manual secret needed.
 
 ---
 
@@ -109,6 +171,13 @@ agentforge_0.1.0_x64.msi         ← MSI package
 
 ```
 agentforge/
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml
+│   │   ├── release.yml
+│   │   └── icon-gen.yml
+│   └── dependabot.yml
+│
 ├── index.html
 ├── vite.config.ts
 ├── package.json
@@ -116,12 +185,12 @@ agentforge/
 │
 ├── src/
 │   ├── main.tsx
-│   ├── App.tsx
+│   ├── App.tsx                        # layout root, mounts HistorySidebar
 │   ├── styles/
 │   │   └── global.css
 │   ├── store/
 │   │   ├── useAppStore.ts
-│   │   ├── useHistoryStore.ts
+│   │   ├── useHistoryStore.ts         # persistent run history
 │   │   ├── useWorkflowStore.ts
 │   │   └── useGraphStore.ts
 │   ├── types/
@@ -131,14 +200,15 @@ agentforge/
 │   │   ├── agentFs.ts
 │   │   ├── router.ts
 │   │   ├── embeddings.ts
-│   │   ├── workflowRunner.ts      # sequential execution engine
-│   │   ├── parallelRunner.ts      # parallel fan-out / fan-in engine
+│   │   ├── workflowRunner.ts
+│   │   ├── parallelRunner.ts
 │   │   ├── graphLayout.ts
 │   │   ├── hfHub.ts
-│   │   ├── quantParser.ts         # GGUF quant tag parsing + VRAM estimates
-│   │   ├── providers.ts           # known HF GGUF providers
-│   │   ├── modelDownloader.ts     # download to folder + Ollama import
-│   │   ├── modelSort.ts           # sort / filter enriched GGUF file list
+│   │   ├── quantParser.ts
+│   │   ├── providers.ts
+│   │   ├── modelDownloader.ts
+│   │   ├── modelSort.ts
+│   │   ├── historyPersist.ts          # tauri-plugin-store wrapper (history.json)
 │   │   └── settings.ts
 │   └── components/
 │       ├── shared/
@@ -148,11 +218,6 @@ agentforge/
 │       │   └── SettingsPanel.tsx
 │       ├── ModelManager/
 │       │   └── ModelManager.tsx
-│       ├── ModelBrowser/
-│       │   ├── QuantBadge.tsx
-│       │   ├── ProviderFilter.tsx
-│       │   ├── DownloadButton.tsx
-│       │   └── ModelFileTable.tsx
 │       ├── HfGgufBrowser/
 │       │   ├── HfGgufBrowser.tsx
 │       │   └── HfGgufBrowser.module.css
@@ -168,6 +233,9 @@ agentforge/
 │       │   ├── WorkflowGraph.tsx
 │       │   ├── AgentNode.tsx
 │       │   └── EdgeWithLabel.tsx
+│       ├── HistorySidebar/            # run history panel
+│       │   ├── HistorySidebar.tsx
+│       │   └── HistorySidebar.module.css
 │       └── ChatPanel/
 │           ├── ChatPanel.tsx
 │           └── StopButton.tsx
@@ -176,11 +244,23 @@ agentforge/
 │   ├── Cargo.toml
 │   ├── build.rs
 │   ├── tauri.conf.json
+│   ├── icons/
+│   │   ├── icon.svg                  # canonical source → regenerate with tauri icon
+│   │   ├── icon.ico
+│   │   ├── icon.icns
+│   │   ├── 32x32.png
+│   │   ├── 128x128.png
+│   │   ├── 128x128@2x.png
+│   │   └── README.md
 │   └── src/
 │       ├── main.rs
 │       ├── lib.rs
 │       └── commands/
 │           └── download.rs
+│
+├── assets/
+│   └── installer/
+│       └── README.md                 # NSIS bitmap specs (nsis-header.bmp, nsis-sidebar.bmp)
 │
 └── agents/
     ├── README.md
@@ -475,10 +555,10 @@ cd src-tauri && cargo clippy   # Rust lints
 - [x] HF GGUF browser (search, provider filter, quant metadata, direct download, SHA-256, Ollama import)
 - [x] Parallel agent execution (`parallelRunner.ts`: fan-out / fan-in, `Promise.allSettled`, merge strategies, abort propagation, context budgeting)
 
-**Phase 4 — Distribution** *(next)*
-- [ ] Persistent run history (saved to disk, browsable across sessions)
-- [ ] App icon + bundle metadata (version, author, description)
-- [ ] GitHub Actions release workflow (`.exe` + `.msi` as release assets)
+**Phase 4 — Distribution** *(in progress)*
+- [x] Persistent run history — disk persistence via `tauri-plugin-store` (`history.json`), `HistorySidebar` with status badges, chain, timestamps
+- [x] App icon + bundle metadata — SVG source (`icon.svg`), publisher, copyright, NSIS/WiX metadata, WiX upgrade GUID
+- [x] GitHub Actions release pipeline — `ci.yml` (type-check + lint), `release.yml` (Windows x64 → NSIS + MSI + checksums), `icon-gen.yml` (auto-regen rasters), Dependabot
 - [ ] Auto-updater (`tauri-plugin-updater`)
 - [ ] Onboarding wizard (first-launch: detect Ollama, pick model, set agents dir)
 - [ ] Agent Marketplace (import community agent packs from GitHub)
@@ -505,4 +585,4 @@ cd src-tauri && cargo clippy   # Rust lints
 
 ## License
 
-Private repository — all rights reserved.
+MIT — see [LICENSE](LICENSE).
