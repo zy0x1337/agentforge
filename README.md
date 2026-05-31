@@ -1,137 +1,141 @@
 # AgentForge
 
-> Lokale Open-Source LLMs browsen, herunterladen und in automatisierte Agent-Workflows orchestrieren — als native Windows-App.
+> Browse and download local open-source LLMs, then orchestrate them into automated agent workflows — as a native Windows desktop app.
 
-AgentForge ist eine Desktop-Applikation auf Basis von **Tauri v2 + React/TypeScript**, die [Ollama](https://ollama.com) als lokales LLM-Backend nutzt. Ordner mit `.md`-Dateien definieren eigenständige **Agents**, die sich gegenseitig aktivieren, Kontext weitergeben und komplexe Aufgaben automatisch in Schritte aufteilen können.
+AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https://ollama.com) as the local LLM backend. Folders containing `.md` files define self-contained **agents** that can activate each other, pass context forward, and automatically decompose complex tasks into sequential steps.
+
+![License](https://img.shields.io/badge/license-private-red) ![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-18-61dafb) ![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange)
 
 ---
 
 ## Features
 
-- **Model Manager** — Installierte Modelle anzeigen, populäre Modelle mit einem Klick herunterladen (via Ollama), Custom-Modell-Namen pullen, Default-Modell festlegen
-- **Agent Explorer** — Beliebigen Ordner als Agents-Verzeichnis öffnen; jeder Unterordner ist ein Agent, definiert durch `.md`-Dateien mit YAML-Frontmatter
-- **Workflow Runner** — Einen Prompt eingeben; der Router-Agent bestimmt den passendsten Agent, führt ihn aus, gibt den strukturierten Output an den nächsten Agent weiter
-- **Streaming UI** — Jeder Agent-Step wird live gestreamt und als Chat-Bubble dargestellt
-- **Ollama Gate** — Automatische Erkennung ob Ollama läuft; bei Bedarf Installation via `winget` anstoßen
+- **Model Manager** — View installed models, download popular ones with a single click via Ollama, pull any custom model by name, and set a default model for the app
+- **Agent Explorer** — Open any folder as an agents directory; every subfolder becomes an agent defined by `.md` files with YAML frontmatter
+- **Workflow Runner** — Enter a prompt; the router selects the best-matching agent, executes it, and passes structured output to the next agent in the chain
+- **Streaming UI** — Every agent step streams output live as a chat bubble in real time
+- **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
 
 ---
 
-## Voraussetzungen
+## Prerequisites
 
-| Tool | Version | Link |
-|------|---------|------|
+| Tool | Version | Install |
+|------|---------|---------|
 | **Node.js** | ≥ 20 | [nodejs.org](https://nodejs.org) |
 | **pnpm** | ≥ 9 | `npm i -g pnpm` |
-| **Rust** | ≥ 1.77 (stable) | [rustup.rs](https://rustup.rs) |
-| **Tauri CLI** | v2 (via devDep) | — |
-| **Ollama** | aktuell | [ollama.com/download](https://ollama.com/download) |
-| **WebView2** | vorinstalliert ab Win10 22H2 | [microsoft.com/edge/webview2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) |
+| **Rust** (stable) | ≥ 1.77 | [rustup.rs](https://rustup.rs) |
+| **Ollama** | latest | [ollama.com/download](https://ollama.com/download) |
+| **WebView2** | any | Pre-installed on Windows 10 22H2+ / Windows 11 |
 
-> **Hinweis Windows:** Visual C++ Build Tools werden von Rust benötigt. Am einfachsten via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) → "Desktop development with C++" aktivieren.
+> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **"Desktop development with C++"**.
 
 ---
 
-## Setup & Entwicklung
+## Getting Started
 
-### 1. Repository klonen
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/zy0x1337/agentforge.git
 cd agentforge
 ```
 
-### 2. Node-Dependencies installieren
+### 2. Install dependencies
 
 ```bash
 pnpm install
 ```
 
-### 3. Ollama starten
+### 3. Start Ollama and pull a model
 
 ```bash
-# Ollama muss im Hintergrund laufen (startet automatisch nach Installation)
+# Ollama must be running in the background
 ollama serve
 
-# Mindestens ein Modell herunterladen (z.B. für schnelle Tests)
+# Pull at least one model (small and fast for development)
 ollama pull llama3.2:3b
 ```
 
-### 4. Dev-Server starten
+### 4. Start the dev server
 
 ```bash
 pnpm tauri:dev
 ```
 
-Der erste Start dauert mehrere Minuten, da Cargo alle Rust-Abhängigkeiten kompiliert. Folgestarts sind deutlich schneller dank Incremental Compilation.
+> **Note:** The first build takes several minutes while Cargo compiles all Rust dependencies. Subsequent starts are significantly faster thanks to incremental compilation.
 
-### 5. (Optional) Nur Frontend entwickeln
+### 5. Frontend-only development (optional)
 
 ```bash
 pnpm dev
 # → http://localhost:1420
 ```
 
-Ohne Tauri-Kontext fehlen FS-Zugriff und Shell-Befehle. Für reine UI-Arbeit ausreichend.
+Without the Tauri context, filesystem access and shell commands are unavailable. Sufficient for pure UI work.
 
 ---
 
-## Produktions-Build
+## Production Build
 
 ```bash
 pnpm tauri:build
 ```
 
-Erzeugt unter `src-tauri/target/release/bundle/`:
-- `agentforge_0.1.0_x64-setup.exe` — NSIS-Installer
-- `agentforge_0.1.0_x64.msi` — MSI-Paket
+Output in `src-tauri/target/release/bundle/`:
 
-> Release-Profile sind auf minimale Größe optimiert (`opt-level = "s"`, LTO, Strip).
+```
+agentforge_0.1.0_x64-setup.exe   ← NSIS installer
+agentforge_0.1.0_x64.msi         ← MSI package
+```
+
+> Release builds are size-optimized via `opt-level = "s"`, LTO, and strip.
 
 ---
 
-## Projektstruktur
+## Project Structure
 
 ```
 agentforge/
-├── index.html                    # Tauri WebView Entry
+├── index.html                    # Tauri WebView entry point
 ├── vite.config.ts
 ├── package.json
 ├── tsconfig.json
 │
-├── src/                          # React + TypeScript Frontend
-│   ├── main.tsx                  # ReactDOM Entry
-│   ├── App.tsx                   # Root-Komponente, Ollama-Polling
+├── src/                          # React + TypeScript frontend
+│   ├── main.tsx                  # ReactDOM entry
+│   ├── App.tsx                   # Root component, Ollama health polling
 │   ├── styles/
-│   │   └── global.css            # Design Tokens (CSS Custom Properties)
+│   │   └── global.css            # Design tokens (CSS custom properties)
 │   ├── store/
-│   │   └── useAppStore.ts        # Zustand Global State
+│   │   └── useAppStore.ts        # Zustand global state
 │   ├── types/
-│   │   └── index.ts              # TypeScript Interfaces
+│   │   └── index.ts              # TypeScript interfaces
 │   ├── lib/
-│   │   ├── ollama.ts             # Ollama REST-API Client
-│   │   ├── agentFs.ts            # Agent-Ordner lesen/schreiben (Tauri FS)
-│   │   ├── router.ts             # Agent-Routing (Keyword + LLM-Fallback)
-│   │   └── workflowRunner.ts     # Agent-Chain-Executor
+│   │   ├── ollama.ts             # Ollama REST API client
+│   │   ├── agentFs.ts            # Agent folder reader/writer (Tauri FS)
+│   │   ├── router.ts             # Agent routing (keyword + LLM fallback)
+│   │   └── workflowRunner.ts     # Agent chain executor
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx       # Navigation + Ollama-Status
-│       │   └── OllamaGate.tsx    # "Ollama nicht gefunden"-Screen
+│       │   ├── Sidebar.tsx       # Navigation + Ollama status indicator
+│       │   └── OllamaGate.tsx    # "Ollama not found" screen
 │       ├── ModelManager/
-│       │   └── ModelManager.tsx  # Modelle verwalten + herunterladen
+│       │   └── ModelManager.tsx  # Browse, download, and manage models
 │       ├── AgentExplorer/
-│       │   └── AgentExplorer.tsx # Agent-Ordner navigieren + editieren
+│       │   └── AgentExplorer.tsx # Navigate agent folders, view/edit agents
 │       └── ChatPanel/
-│           └── ChatPanel.tsx     # Workflow ausführen + Ergebnis streamen
+│           └── ChatPanel.tsx     # Run workflows, stream agent output
 │
-├── src-tauri/                    # Rust Backend (Tauri v2)
+├── src-tauri/                    # Rust backend (Tauri v2)
 │   ├── Cargo.toml
 │   ├── build.rs
-│   ├── tauri.conf.json           # App-Konfiguration, Permissions
+│   ├── tauri.conf.json           # App config, permissions, bundle
 │   └── src/
 │       ├── main.rs
-│       └── lib.rs                # Tauri Commands (install_ollama, etc.)
+│       └── lib.rs                # Tauri commands (install_ollama, etc.)
 │
-└── agents/                       # Beispiel-Agents (eigener Ordner empfohlen)
+└── agents/                       # Example agents (or point to your own folder)
     ├── router/
     ├── coder/
     ├── reviewer/
@@ -140,27 +144,39 @@ agentforge/
 
 ---
 
-## Agent-System
+## Agent System
 
-### Konzept
+### Concept
 
-Jeder Unterordner im Agents-Verzeichnis ist ein eigenständiger **Agent**. Ein Agent wird durch `.md`-Dateien mit YAML-Frontmatter definiert. Der Workflow-Runner liest diese Metadaten und orchestriert automatisch die Ausführungsreihenfolge.
+Every subfolder in the agents directory is a standalone **agent**. Agents are defined by `.md` files with YAML frontmatter. The workflow runner reads this metadata to determine execution order, context passing, and model selection — automatically.
 
-### Datei-Schema
+```
+User Prompt
+    ↓
+Router  →  selects best-matching agent based on triggers + LLM scoring
+    ↓
+Agent A  →  executes, produces structured output
+    ↓
+Agent B  →  receives context + output, executes next step
+    ↓
+...  →  chain ends when no next_agents are defined or output signals completion
+```
 
-#### `persona.md` *(Pflicht)*
+### File Schema
 
-Definiert die Identität, Fähigkeiten und Routing-Metadaten des Agents.
+#### `persona.md` *(required)*
+
+Defines the agent's identity, capabilities, and routing metadata.
 
 ```markdown
 ---
 name: Coder
-description: Schreibt sauberen TypeScript/React Code basierend auf Anforderungen
+description: Writes clean TypeScript/React code from requirements
 model: qwen2.5-coder:7b
 triggers:
-  - "schreib code"
-  - "implementiere"
-  - "erstelle komponente"
+  - "write code"
+  - "implement"
+  - "create component"
   - "fix bug"
 next_agents:
   - reviewer
@@ -168,23 +184,23 @@ context_mode: summary   # "full" | "summary" | "none"
 temperature: 0.3
 ---
 
-Du bist ein erfahrener Senior TypeScript Developer mit Fokus auf React und saubere Architektur.
+You are a senior TypeScript developer focused on React and clean architecture.
 
-## Verhalten
-- Schreibe immer vollständige, lauffähige Code-Snippets
-- Erkläre deine Designentscheidungen kurz
-- Beachte Best Practices (Typing, Error Handling, Accessibility)
+## Behavior
+- Always write complete, runnable code
+- Briefly explain design decisions
+- Follow best practices: typing, error handling, accessibility
 
-## Output-Format
-Strukturiere deinen Output immer als:
-1. Kurze Erklärung des Ansatzes
-2. Vollständiger Code-Block
-3. Hinweise auf mögliche Erweiterungen
+## Output Format
+Structure every response as:
+1. Brief explanation of the approach
+2. Complete code block
+3. Notes on possible extensions
 ```
 
-#### `prompt.md` *(Optional)*
+#### `prompt.md` *(optional)*
 
-Wiederverwendbare Prompt-Templates mit `{{variable}}`-Platzhaltern.
+Reusable prompt templates with `{{variable}}` placeholders.
 
 ```markdown
 ---
@@ -194,18 +210,18 @@ variables:
   - context
 ---
 
-Aufgabe: {{task}}
-Sprache/Framework: {{language}}
+Task: {{task}}
+Language/Framework: {{language}}
 
-Kontext aus vorherigem Schritt:
+Context from previous step:
 {{context}}
 
-Bitte liefere eine vollständige Implementierung.
+Provide a complete implementation.
 ```
 
-#### `workflow.md` *(Optional)*
+#### `workflow.md` *(optional)*
 
-Definiert eine feste Ausführungsreihenfolge — überschreibt das dynamische Routing des Routers.
+Defines a fixed execution order — overrides the dynamic router.
 
 ```markdown
 ---
@@ -217,12 +233,12 @@ steps:
 mode: sequential   # "sequential" | "parallel"
 ---
 
-Dieser Workflow erstellt und reviewed Code in drei Schritten.
+This workflow creates and reviews code in three steps.
 ```
 
-#### `tools.md` *(Geplant — Phase 3)*
+#### `tools.md` *(planned — Phase 3)*
 
-Definiert Shell-Befehle oder Skripte, die dieser Agent ausführen darf.
+Defines shell commands or scripts this agent is permitted to execute.
 
 ```markdown
 ---
@@ -232,112 +248,122 @@ allowed_commands:
 timeout: 30
 ---
 
-Dieser Agent darf Linting und Tests ausführen.
+This agent may run linting and test suites.
 ```
 
-### Frontmatter-Referenz
+### Frontmatter Reference
 
-| Feld | Typ | Pflicht | Beschreibung |
-|------|-----|---------|--------------|
-| `name` | `string` | ✅ | Anzeigename des Agents |
-| `description` | `string` | ✅ | Kurzbeschreibung (für Router-Matching) |
-| `model` | `string` | — | Ollama-Modellname; Fallback: Default-Modell der App |
-| `triggers` | `string[]` | — | Keywords für Keyword-Routing |
-| `next_agents` | `string[]` | — | Agent-IDs (Ordnernamen) die nach diesem aktiviert werden |
-| `context_mode` | `"full" \| "summary" \| "none"` | — | Wie viel Kontext weitergegeben wird (Standard: `summary`) |
-| `temperature` | `number` | — | LLM-Temperatur 0.0–1.0 (Standard: 0.7) |
-| `max_tokens` | `number` | — | Maximale Output-Token (Standard: 2048) |
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `string` | ✅ | Display name of the agent |
+| `description` | `string` | ✅ | Short description used for router matching |
+| `model` | `string` | — | Ollama model name; falls back to app default |
+| `triggers` | `string[]` | — | Keywords for trigger-based routing |
+| `next_agents` | `string[]` | — | Agent IDs (folder names) to activate after this agent |
+| `context_mode` | `"full" \| "summary" \| "none"` | — | How much context is forwarded (default: `summary`) |
+| `temperature` | `number` | — | LLM temperature 0.0–1.0 (default: `0.7`) |
+| `max_tokens` | `number` | — | Maximum output tokens (default: `2048`) |
 
-### Routing-Logik
+### Routing Logic
 
-Der Router bestimmt in zwei Stufen welcher Agent für einen Prompt zuständig ist:
+The router selects an agent in two stages:
 
-1. **Keyword-Match** — `triggers` aller Agents werden gegen den Prompt gescored. Der Agent mit dem höchsten Score gewinnt.
-2. **LLM-Fallback** — Bei Gleichstand oder keinem Match wird das Default-Modell befragt: *"Welcher dieser Agents ist am besten geeignet für: [prompt]?"*
+1. **Keyword match** — Each agent's `triggers` array is scored against the prompt. The highest-scoring agent wins.
+2. **LLM fallback** — On a tie or no match, the default model is asked: *"Which of these agents is best suited for: [prompt]?"*
 
 ---
 
-## Konfiguration
+## Configuration
 
-Die App-Einstellungen werden persistent über `tauri-plugin-store` gespeichert:
+App settings are persisted via `tauri-plugin-store`:
 
-| Einstellung | Beschreibung | Standard |
-|-------------|--------------|---------|
-| `defaultModel` | Ollama-Modell für alle Agents ohne eigenes `model`-Feld | — |
-| `agentsDir` | Absoluter Pfad zum Agents-Verzeichnis | — |
-| `ollamaBaseUrl` | Ollama API Endpoint | `http://localhost:11434` |
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `defaultModel` | Ollama model used by agents without an explicit `model` field | — |
+| `agentsDir` | Absolute path to the agents directory | — |
+| `ollamaBaseUrl` | Ollama API endpoint | `http://localhost:11434` |
 
 ---
 
-## Entwicklungs-Workflow
+## Development
 
-### Branches
+### Branch Strategy
 
 ```
-main          ← stable, immer deployable
-feat/*        ← neue Features
-fix/*         ← Bugfixes
+main        ← stable, always deployable
+feat/*      ← new features
+fix/*       ← bug fixes
 ```
 
-### Nützliche Commands
+### Useful Commands
 
 ```bash
-# TypeScript type-check ohne Build
+# TypeScript type check without building
 pnpm type-check
 
-# Linting
+# Lint
 pnpm lint
 
-# Nur Rust kompilieren (ohne Frontend)
+# Check Rust compilation without linking
 cd src-tauri && cargo check
 
-# Rust-Warnungen anzeigen
+# Rust lints and warnings
 cd src-tauri && cargo clippy
 ```
 
-### Tauri-Permissions anpassen
+### Adding Tauri Permissions
 
-Berechtigungen werden in `src-tauri/tauri.conf.json` unter `app.security.capabilities` definiert. Für neue Tauri-Plugins muss jeweils eine Capability-Datei unter `src-tauri/capabilities/` erstellt werden.
+Permissions are defined in `src-tauri/tauri.conf.json` under `app.security.capabilities`. New Tauri plugins each require a capability file under `src-tauri/capabilities/`.
 
 ---
 
 ## Roadmap
 
-- [x] Tauri v2 + React/TS Boilerplate
-- [x] Ollama REST-API Client (list, pull mit Progress, delete, chat mit Streaming)
-- [x] Agent-FS-Reader (Frontmatter-Parsing via gray-matter)
-- [x] Keyword + LLM-basierter Router
-- [x] Workflow-Runner mit Agent-Chaining
+**Phase 1 — Core (done)**
+- [x] Tauri v2 + React/TS boilerplate
+- [x] Ollama REST client (list, pull with progress, delete, streaming chat)
+- [x] Agent FS reader (frontmatter parsing via gray-matter)
+- [x] Keyword + LLM-based router
+- [x] Workflow runner with agent chaining
 - [x] Model Manager UI
 - [x] Agent Explorer UI
-- [x] Chat/Run Panel UI
-- [ ] Settings-Persistenz (`tauri-plugin-store`)
-- [ ] Beispiel-Agent-Pack (Router, Coder, Reviewer, Summarizer)
-- [ ] Semantisches Routing via Embeddings (`nomic-embed-text`)
-- [ ] `workflow.md` sequenzieller Step-Parser
-- [ ] Workflow-Graph-Visualisierung (ReactFlow)
-- [ ] MD-Editor im Agent Explorer (CodeMirror 6)
-- [ ] `tools.md` Shell-Execution (Rust-Command, Allowlist)
-- [ ] Hugging Face GGUF-Browser
-- [ ] GitHub Actions Release-Build
+- [x] Chat / Run Panel UI
+
+**Phase 2 — Stability**
+- [ ] Settings persistence (`tauri-plugin-store`)
+- [ ] Example agent pack (Router, Coder, Reviewer, Summarizer)
+- [ ] Semantic routing via embeddings (`nomic-embed-text`)
+- [ ] `workflow.md` sequential step parser
+- [ ] Abort signal for running workflows
+- [ ] Run history in sidebar
+
+**Phase 3 — Power Features**
+- [ ] Workflow graph visualization (ReactFlow)
+- [ ] Inline MD editor in Agent Explorer (CodeMirror 6)
+- [ ] `tools.md` shell execution (Rust command, allowlist)
+- [ ] Hugging Face GGUF browser
+
+**Phase 4 — Distribution**
+- [ ] App icon + bundle metadata
+- [ ] GitHub Actions release build (`.exe` as release asset)
 
 ---
 
 ## Tech Stack
 
-| Schicht | Technologie |
-|---------|------------|
-| Desktop-Framework | Tauri v2 |
+| Layer | Technology |
+|-------|-----------|
+| Desktop framework | Tauri v2 |
 | Frontend | React 18 + TypeScript 5 |
-| State | Zustand 4 |
-| Build | Vite 5 |
+| State management | Zustand 4 |
+| Build tool | Vite 5 |
 | Backend | Rust 1.77+ |
-| LLM-Runtime | Ollama |
-| MD-Parsing | gray-matter (Frontmatter) + marked (Render) |
-| Tauri Plugins | fs, shell, http, dialog |
+| LLM runtime | Ollama |
+| MD parsing | gray-matter (frontmatter) + marked (render) |
+| Tauri plugins | fs, shell, http, dialog |
 
 ---
 
-## Lizenz
+## License
 
-Privates Repository — alle Rechte vorbehalten.
+Private repository — all rights reserved.
