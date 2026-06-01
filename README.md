@@ -4,7 +4,7 @@
 
 AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https://ollama.com) as the local LLM backend. Folders containing `.md` files define self-contained **agents** that can activate each other, pass context forward, and automatically decompose complex tasks into sequential or parallel steps.
 
-![License](https://img.shields.io/badge/license-MIT-green) ![CI](https://img.shields.io/github/actions/workflow/status/zy0x1337/agentforge/ci.yml?label=CI) ![Release](https://img.shields.io/github/v/release/zy0x1337/agentforge?label=Release) ![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-18-61dafb) ![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange)
+![License](https://img.shields.io/badge/license-MIT-green) ![CI](https://img.shields.io/github/actions/workflow/status/zy0x1337/agentforge/ci.yml?branch=main&label=CI) ![Release](https://img.shields.io/github/v/release/zy0x1337/agentforge?include_prereleases&display_name=tag&label=Release) ![Tauri](https://img.shields.io/badge/Tauri-v2-blue) ![React](https://img.shields.io/badge/React-18-61dafb) ![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange)
 
 ---
 
@@ -57,7 +57,7 @@ See [Getting Started](#getting-started) below.
 ## Prerequisites
 
 | Tool | Version | Install |
-|------|---------|---------|
+|------|---------|---------| 
 | **Node.js** | ≥ 20 | [nodejs.org](https://nodejs.org) |
 | **pnpm** | ≥ 9 | `npm i -g pnpm` |
 | **Rust** (stable) | ≥ 1.77 | [rustup.rs](https://rustup.rs) |
