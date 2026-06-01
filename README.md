@@ -1,6 +1,6 @@
 # AgentForge
 
-> Browse and download local open-source LLMs, then orchestrate them into automated agent workflows — as a native Windows desktop app.
+> Browse and download local open-source LLMs, then orchestrate them into automated agent workflows — a native desktop app for **Windows, macOS and Linux**.
 
 AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https://ollama.com) as the local LLM backend. Folders containing `.md` files define self-contained **agents** that can activate each other, pass context forward, and automatically decompose complex tasks into sequential or parallel steps.
 
@@ -23,7 +23,7 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 - **Run History** — Every completed or aborted run is persisted to disk and shown in a sidebar; clicking an entry re-opens the Graph panel for that run
 - **Settings Panel** — Slide-over drawer: LLM, Agents, Routing mode, Appearance, Diagnostics. All changes persist immediately
 - **Persistent Settings** — Default model, agents directory, Ollama base URL, theme, embedding model, and routing mode saved via `tauri-plugin-store`
-- **Ollama Gate** — Detects whether Ollama is running; if not, offers one-click installation via `winget`
+- **Ollama Gate** — Detects whether Ollama is running; if not, offers guided installation instructions
 
 ---
 
@@ -32,13 +32,20 @@ AgentForge is built on **Tauri v2 + React/TypeScript** and uses [Ollama](https:/
 ### Download (recommended)
 
 1. Go to the [**Releases**](https://github.com/zy0x1337/agentforge/releases) page
-2. Download `AgentForge_<version>_x64-setup.exe`
-3. Run the installer — no admin rights required (installs to user profile)
-4. Make sure [Ollama](https://ollama.com/download) is installed and running
-5. On first launch, follow the **Setup** instructions below
+2. Download the installer for your platform:
 
-> **MSI package** (`AgentForge_<version>_x64_en-US.msi`) is also available for enterprise / GPO deployment.
->
+| Platform | File |
+|---|---|
+| Windows x64 | `AgentForge_*_x64-setup.exe` (NSIS — recommended) |
+| Windows x64 | `AgentForge_*_x64.msi` (MSI — enterprise / GPO) |
+| macOS Apple Silicon | `AgentForge_*_aarch64.dmg` |
+| macOS Intel | `AgentForge_*_x64.dmg` |
+| Linux x64 | `AgentForge_*_amd64.AppImage` (no install needed) |
+| Linux x64 | `AgentForge_*_amd64.deb` (Debian / Ubuntu) |
+
+3. Make sure [Ollama](https://ollama.com/download) is installed and running
+4. On first launch, follow the **Setup** instructions below
+
 > **SHA-256 checksums** for every release asset are attached as `checksums.txt`.
 
 ### Build from source
@@ -55,9 +62,11 @@ See [Getting Started](#getting-started) below.
 | **pnpm** | ≥ 9 | `npm i -g pnpm` |
 | **Rust** (stable) | ≥ 1.77 | [rustup.rs](https://rustup.rs) |
 | **Ollama** | latest | [ollama.com/download](https://ollama.com/download) |
-| **WebView2** | any | Pre-installed on Windows 10 22H2+ / Windows 11 |
 
-> **Windows only:** Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **"Desktop development with C++"**.
+**Platform-specific:**
+- **Windows** — Rust requires the Visual C++ Build Tools. Install via [Visual Studio Installer](https://visualstudio.microsoft.com/visual-cpp-build-tools/) — select **"Desktop development with C++"**. WebView2 is pre-installed on Windows 10 22H2+ / Windows 11.
+- **macOS** — Xcode Command Line Tools: `xcode-select --install`
+- **Linux** — Install WebKit2GTK and build tools: `sudo apt-get install libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf`
 
 ---
 
@@ -98,7 +107,7 @@ Open **Settings** (gear icon) and configure:
 
 | Setting | What to enter |
 |---------|---------------|
-| **Agents directory** | Absolute path to a folder with agent subfolders, e.g. `C:\Users\you\agentforge\agents` |
+| **Agents directory** | Absolute path to a folder with agent subfolders |
 | **Default model** | An installed Ollama model name, e.g. `llama3.2:3b` |
 | **Routing mode** | `Full` if `nomic-embed-text` is installed; otherwise `Rules + LLM` |
 
@@ -116,12 +125,7 @@ pnpm dev   # → http://localhost:1420
 pnpm tauri:build
 ```
 
-Output in `src-tauri/target/release/bundle/`:
-
-```
-AgentForge_0.1.0_x64-setup.exe   ← NSIS installer
-AgentForge_0.1.0_x64_en-US.msi   ← MSI package
-```
+Output in `src-tauri/target/release/bundle/`.
 
 ---
 
@@ -131,11 +135,11 @@ All pipelines live in [`.github/workflows/`](.github/workflows/).
 
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
-| **CI** (`ci.yml`) | Every PR + push to `main` | `pnpm type-check` + `pnpm lint` on ubuntu-latest (fast — no Rust compile) |
-| **Release** (`release.yml`) | `git push origin v*.*.*` | Windows x64 build → NSIS `.exe` + WiX `.msi` → GitHub Release + `checksums.txt` |
+| **CI** (`ci.yml`) | Every PR + push to `main` | `pnpm type-check` + `pnpm lint` on ubuntu-latest |
+| **Release** (`release.yml`) | `git push origin v*.*.*` | Cross-platform matrix build → Windows (NSIS + MSI), macOS (DMG × 2), Linux (AppImage + deb) → GitHub Release + `checksums.txt` |
 | **Icon Generator** (`icon-gen.yml`) | `icon.svg` changed on `main` | Regenerates all PNG/ICO/ICNS rasters and commits them back |
 
-**Dependabot** runs every Monday at 09:00 CET and opens grouped PRs for GitHub Actions, npm, and Cargo updates. Major version bumps require manual review.
+**Dependabot** runs every Monday at 09:00 CET and opens grouped PRs for GitHub Actions, npm, and Cargo updates.
 
 ### Creating a release
 
@@ -143,7 +147,7 @@ All pipelines live in [`.github/workflows/`](.github/workflows/).
 # Bump version in tauri.conf.json + Cargo.toml + package.json first, then:
 git tag v0.2.0
 git push origin v0.2.0
-# → GitHub Actions builds the installer and creates the release automatically
+# → GitHub Actions builds all platform installers and creates the release automatically
 ```
 
 Pre-release tags (e.g. `v0.2.0-beta.1`) are automatically marked as pre-releases on GitHub.
@@ -156,8 +160,8 @@ Required before the first `git tag` push. Store both values as repository secret
 # Generate key pair
 npx @tauri-apps/cli signer generate -w ~/.tauri/agentforge.key
 
-# Base64-encode the private key and copy to clipboard
-base64 -w 0 ~/.tauri/agentforge.key   # Linux / WSL
+# Base64-encode the private key
+base64 -w 0 ~/.tauri/agentforge.key   # Linux / macOS / WSL
 # → GitHub → Settings → Secrets → Actions:
 #   TAURI_SIGNING_PRIVATE_KEY         ← paste the base64 output
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD ← passphrase (empty string OK for dev)
@@ -176,8 +180,15 @@ agentforge/
 │   │   ├── ci.yml
 │   │   ├── release.yml
 │   │   └── icon-gen.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.md
+│   │   └── feature_request.md
+│   ├── PULL_REQUEST_TEMPLATE.md
 │   └── dependabot.yml
 │
+├── LICENSE
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
 ├── index.html
 ├── vite.config.ts
 ├── package.json
@@ -185,12 +196,12 @@ agentforge/
 │
 ├── src/
 │   ├── main.tsx
-│   ├── App.tsx                        # layout root, mounts HistorySidebar
+│   ├── App.tsx
 │   ├── styles/
 │   │   └── global.css
 │   ├── store/
 │   │   ├── useAppStore.ts
-│   │   ├── useHistoryStore.ts         # persistent run history
+│   │   ├── useHistoryStore.ts
 │   │   ├── useWorkflowStore.ts
 │   │   └── useGraphStore.ts
 │   ├── types/
@@ -208,59 +219,26 @@ agentforge/
 │   │   ├── providers.ts
 │   │   ├── modelDownloader.ts
 │   │   ├── modelSort.ts
-│   │   ├── historyPersist.ts          # tauri-plugin-store wrapper (history.json)
+│   │   ├── historyPersist.ts
 │   │   └── settings.ts
 │   └── components/
 │       ├── shared/
-│       │   ├── Sidebar.tsx
-│       │   └── OllamaGate.tsx
 │       ├── Settings/
-│       │   └── SettingsPanel.tsx
 │       ├── ModelManager/
-│       │   └── ModelManager.tsx
 │       ├── HfGgufBrowser/
-│       │   ├── HfGgufBrowser.tsx
-│       │   └── HfGgufBrowser.module.css
 │       ├── AgentExplorer/
-│       │   └── AgentExplorer.tsx
 │       ├── AgentEditor/
-│       │   ├── AgentEditor.tsx
-│       │   ├── AgentEditor.module.css
-│       │   ├── FrontmatterPanel.tsx
-│       │   ├── FrontmatterPanel.module.css
-│       │   └── useEditorStore.ts
 │       ├── WorkflowGraph/
-│       │   ├── WorkflowGraph.tsx
-│       │   ├── AgentNode.tsx
-│       │   └── EdgeWithLabel.tsx
-│       ├── HistorySidebar/            # run history panel
-│       │   ├── HistorySidebar.tsx
-│       │   └── HistorySidebar.module.css
+│       ├── HistorySidebar/
 │       └── ChatPanel/
-│           ├── ChatPanel.tsx
-│           └── StopButton.tsx
 │
 ├── src-tauri/
 │   ├── Cargo.toml
-│   ├── build.rs
 │   ├── tauri.conf.json
-│   ├── icons/
-│   │   ├── icon.svg                  # canonical source → regenerate with tauri icon
-│   │   ├── icon.ico
-│   │   ├── icon.icns
-│   │   ├── 32x32.png
-│   │   ├── 128x128.png
-│   │   ├── 128x128@2x.png
-│   │   └── README.md
 │   └── src/
 │       ├── main.rs
 │       ├── lib.rs
 │       └── commands/
-│           └── download.rs
-│
-├── assets/
-│   └── installer/
-│       └── README.md                 # NSIS bitmap specs (nsis-header.bmp, nsis-sidebar.bmp)
 │
 └── agents/
     ├── README.md
@@ -276,24 +254,6 @@ agentforge/
 
 The **HF GGUF Browser** provides full model discovery and direct download without leaving the app.
 
-### Data flow
-
-```
-Search query + provider filter
-    ↓
-GET /api/models?search=...&filter=gguf
-    ↓
-Filter + sort by quant / size / VRAM
-    ↓
-Select file  →  DownloadButton
-    ↓                 ↓
-Open in browser   stream to models folder (Tauri FS)
-                      ↓
-               SHA-256 verify
-                      ↓
-               "Import into Ollama"  →  ollama create --file
-```
-
 ### Provider badges
 
 | Provider | Speciality |
@@ -302,8 +262,6 @@ Open in browser   stream to models folder (Tauri FS)
 | **TheBloke** | Largest catalogue, legacy formats — ✓ recommended |
 | **lmstudio-community** | Optimised for llama.cpp / LM Studio — ✓ recommended |
 | **unsloth** | Dynamic quants (DQ), fine-tunes — ✓ recommended |
-| mradermacher | Broad coverage including rare models |
-| QuantFactory | Automated pipeline across many families |
 
 ### Quant quality tiers
 
@@ -323,23 +281,6 @@ Open in browser   stream to models folder (Tauri FS)
 
 Every subfolder in the agents directory is a standalone **agent**. Agents are defined by `.md` files with YAML frontmatter. The workflow runner reads this metadata to determine execution order, parallelism, context passing, and model selection — automatically.
 
-```
-User Prompt
-    ↓
-Router  →  selects best-matching agent
-    ↓
-Agent A  →  executes, produces structured output
-    ↓
-┌──────────────────────────────────┐
-│  Parallel group (mode: parallel) │
-│  Agent B ──┐                     │
-│  Agent C ──┼──→  fan-in merge    │
-│  Agent D ──┘                     │
-└──────────────────────────────────┘
-    ↓
-Agent E  →  receives merged context, finalises
-```
-
 ### File Schema
 
 #### `persona.md` *(required)*
@@ -352,10 +293,9 @@ model: qwen2.5-coder:7b
 triggers:
   - "write code"
   - "implement"
-  - "create component"
 next_agents:
   - reviewer
-context_mode: summary   # "full" | "summary" | "none"
+context_mode: summary
 temperature: 0.3
 max_tokens: 4096
 ---
@@ -363,28 +303,20 @@ max_tokens: 4096
 You are a senior TypeScript developer…
 ```
 
-#### `workflow.md` — sequential and parallel
+#### `workflow.md`
 
 ```markdown
 ---
 steps:
   - agent: router
-  - agents: [coder, researcher]   # parallel group
+  - agents: [coder, researcher]
     mode: parallel
-    merge_strategy: concat         # "concat" | "summarise" | "vote"
-    timeout_ms: 90000              # per-agent timeout (default: 120 000)
+    merge_strategy: concat
+    timeout_ms: 90000
   - agent: reviewer
   - agent: summarizer
 ---
 ```
-
-#### `prompt.md` *(optional)*
-
-Reusable template with `{{variable}}` placeholders.
-
-#### `tools.md` *(Phase 3)*
-
-Allowed shell commands with timeout (executed via Rust sidecar).
 
 ### Frontmatter Reference
 
@@ -409,97 +341,15 @@ Allowed shell commands with timeout (executed via Rust sidecar).
 
 ## Parallel Execution
 
-### How it works
-
-When `workflowRunner.ts` encounters a step with `mode: parallel`, it delegates to `parallelRunner.ts`. All listed agents are launched simultaneously via `Promise.allSettled` — none blocks the others.
-
-```
-                     ┌─ Agent B ──────────────────── output B ─┐
-input context ───────┼─ Agent C ──────────────────── output C ─┼──→ merge ──→ next step
-                     └─ Agent D ──────────────────── output D ─┘
-                               (all run concurrently)
-```
-
-Each agent:
-- Uses its own `model` override (falls back to app default)
-- Gets an independently budgeted copy of the input context (token-estimated, tail-preserved)
-- Has its own per-agent `timeout_ms` deadline (default 120 s)
-- Streams tokens live to the chat panel via `onToken(agentId, token)`
+When `workflowRunner.ts` encounters a step with `mode: parallel`, it delegates to `parallelRunner.ts`. All listed agents launch simultaneously via `Promise.allSettled`.
 
 ### Merge strategies
 
 | Strategy | Behaviour | Best for |
 |---|---|---|
-| `concat` *(default)* | Outputs appended in declaration order under `### agentId` headers | Code + docs, multi-section reports |
-| `summarise` | A lightweight LLM call condenses all results into a single synthesis | Long parallel outputs, research aggregation |
-| `vote` | Agents return `{ choice, reason }` JSON; majority choice wins | Classification, decision tasks, A/B selection |
-
-### Error isolation
-
-Failed, timed-out, or aborted agents in a parallel group **do not abort the run**. `Promise.allSettled` ensures all lanes are awaited. The merge receives results from whichever agents succeeded. Each result carries a `status` field:
-
-| Status | Cause |
-|--------|-------|
-| `ok` | Agent completed successfully |
-| `error` | Runtime error during execution |
-| `timeout` | Exceeded `timeout_ms` for that agent |
-| `aborted` | User pressed Stop — `AbortController` signal fired |
-
-The chat panel renders a **parallel group summary** above the merged output:
-
-```
-Parallel group — 2/3 agents succeeded · merge: concat · 4 231ms
-✅ coder — 2 104ms
-✅ researcher — 4 231ms
-❌ validator — TypeError: unexpected token
-```
-
-### Abort propagation
-
-Pressing **Stop** calls `AbortController.abort()` on the shared run signal. `parallelRunner.ts` combines each agent's per-agent timeout controller with the shared signal via `AbortSignal.any([runSignal, timeoutSignal])`. Every in-flight `fetch()` stream is cancelled in its `finally` block. The run is pushed to history with `status: "aborted"`.
-
-### Context budget
-
-To avoid overflowing context windows when the same large context is sent to many agents simultaneously, each agent receives a copy budgeted to its `max_tokens` value (default 2 048 tokens, estimated at 4 chars/token). Trimming preserves the **tail** of the context — the most recent content — and prepends `…[context trimmed]`.
-
----
-
-## Inline MD Editor
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  [persona.md ●] [prompt.md] [workflow.md] [tools.md]  [💾] [↺]  │
-├──────────────────────────────────┬───────────────────────────────┤
-│  CodeMirror 6                    │  Live MD preview              │  ← FM panel
-│  (markdown + yaml)               │  (marked + DOMPurify)         │
-└──────────────────────────────────┴───────────────────────────────┘
-```
-
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+S` | Save active tab |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` | Redo |
-
----
-
-## Workflow Graph
-
-| Mode | Trigger | What's shown |
-|------|---------|--------------|
-| **Static** | No run active | Dependency graph from `next_agents` |
-| **Live run** | Workflow executing | Real-time node states |
-| **Parallel group** | `mode: parallel` active | Fan-out nodes with dashed edges, fan-in merge node |
-
-### Node States
-
-| State | Visual |
-|-------|--------|
-| `pending` | Muted, 60% opacity |
-| `running` | Teal border + pulse ring |
-| `done` | Green border |
-| `error` | Red border |
-| `aborted` | 45% opacity, neutral |
+| `concat` *(default)* | Outputs appended in declaration order | Code + docs, multi-section reports |
+| `summarise` | LLM call condenses all results | Long parallel outputs |
+| `vote` | Agents return `{ choice, reason }` JSON; majority wins | Classification, decision tasks |
 
 ---
 
@@ -513,8 +363,6 @@ To avoid overflowing context windows when the same large context is sent to many
 | Routing | Routing mode | `Full` |
 | Routing | Embedding model | `nomic-embed-text` |
 | Appearance | Theme | `Dark` |
-
-All settings saved to `%APPDATA%\AgentForge\settings.json`.
 
 ---
 
@@ -531,37 +379,27 @@ cd src-tauri && cargo clippy   # Rust lints
 
 ## Roadmap
 
-**Phase 1 — Core** ✅
-- [x] Tauri v2 + React/TS boilerplate
-- [x] Ollama REST client (list, pull, delete, streaming chat)
-- [x] Agent FS reader (frontmatter parsing via gray-matter)
-- [x] Keyword + LLM-based router
-- [x] Workflow runner with agent chaining and context budgeting
-- [x] Model Manager, Agent Explorer, Chat / Run Panel
-
-**Phase 2 — Stability** ✅
-- [x] Settings persistence (`tauri-plugin-store`)
-- [x] Example agent pack (Router, Coder, Reviewer, Summarizer)
-- [x] Abort signal (Stop button → `AbortController` → `fetch()`)
-- [x] Run history with status, duration, agent chain, click-to-view
-- [x] `workflow.md` sequential step parser
-- [x] Semantic routing via embeddings
-- [x] Settings panel (LLM, Agents, Routing, Appearance, Diagnostics)
-
-**Phase 3 — Power Features** ✅
-- [x] Workflow graph (ReactFlow + dagre, live + static)
-- [x] Inline MD editor (CodeMirror 6, Frontmatter Panel, dirty state)
-- [x] `tools.md` shell execution (Rust, allowlist, timeout)
-- [x] HF GGUF browser (search, provider filter, quant metadata, direct download, SHA-256, Ollama import)
-- [x] Parallel agent execution (`parallelRunner.ts`: fan-out / fan-in, `Promise.allSettled`, merge strategies, abort propagation, context budgeting)
+**Phase 1–3 — Core, Stability, Power Features** ✅ Complete
 
 **Phase 4 — Distribution** *(in progress)*
-- [x] Persistent run history — disk persistence via `tauri-plugin-store` (`history.json`), `HistorySidebar` with status badges, chain, timestamps
-- [x] App icon + bundle metadata — SVG source (`icon.svg`), publisher, copyright, NSIS/WiX metadata, WiX upgrade GUID
-- [x] GitHub Actions release pipeline — `ci.yml` (type-check + lint), `release.yml` (Windows x64 → NSIS + MSI + checksums), `icon-gen.yml` (auto-regen rasters), Dependabot
+- [x] LICENSE, CONTRIBUTING, CODE_OF_CONDUCT, Issue/PR templates
+- [x] GitHub Actions: CI, cross-platform release matrix (Windows/macOS/Linux), icon generator
+- [x] Dependabot
 - [ ] Auto-updater (`tauri-plugin-updater`)
-- [ ] Onboarding wizard (first-launch: detect Ollama, pick model, set agents dir)
-- [ ] Agent Marketplace (import community agent packs from GitHub)
+- [ ] Onboarding wizard
+
+**Phase 5 — Testing & Robustness** *(planned)*
+- [ ] Vitest unit tests: `parallelRunner`, `router`, `workflowParser`
+- [ ] Playwright E2E smoke tests
+- [ ] CSS Modules migration (remove inline styles from `App.tsx`)
+- [ ] Split `embeddings.ts` — cache layer separate from similarity
+
+**Phase 6 — Features** *(planned)*
+- [ ] OpenAI-compatible API provider
+- [ ] Visual Workflow Builder (drag-and-drop in graph)
+- [ ] Agent Marketplace
+- [ ] RAG integration (local vector DB)
+- [ ] Plugin system
 
 ---
 
@@ -582,6 +420,14 @@ cd src-tauri && cargo clippy   # Rust lints
 | Tauri plugins | fs, shell, http, dialog, store |
 
 ---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for branch conventions, commit format, and the PR process.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md) v2.1.
 
 ## License
 

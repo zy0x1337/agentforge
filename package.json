@@ -1,7 +1,7 @@
 {
   "name": "agentforge",
   "version": "0.1.0",
-  "description": "Browse local open-source LLMs and orchestrate Markdown-defined agent workflows — native Windows desktop app",
+  "description": "Browse local open-source LLMs and orchestrate Markdown-defined agent workflows — native desktop app for Windows, macOS and Linux",
   "author": "AgentForge Contributors",
   "homepage": "https://github.com/zy0x1337/agentforge",
   "repository": {
@@ -18,7 +18,6 @@
     "desktop",
     "local-ai"
   ],
-  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
