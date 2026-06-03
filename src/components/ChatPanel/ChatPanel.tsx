@@ -17,12 +17,22 @@
  * (useWorkflowStore.handleEvent appends chunks via agent_chunk events).
  */
 import { useState, useRef, useEffect } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/store/useAppStore";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
 import { runWorkflow, type WorkflowRunnerDeps } from "@/lib/workflowRunner";
 import { routeToAgent } from "@/lib/router";
 import { chatStream, normalizeModelName } from "@/lib/ollama";
+import {
+  readFileForContext,
+  readFolderForContext,
+  formatContextBlock,
+  parseWriteFileBlocks,
+  type AttachedFile,
+  type FileWriteOp,
+} from "@/lib/contextFiles";
+import { FileChangeReview } from "./FileChangeReview";
 import StopButton from "./StopButton";
 import type { Agent, ChatMessage, WorkflowRun } from "@/types";
 
@@ -41,6 +51,8 @@ export default function ChatPanel() {
 
   const [input, setInput] = useState("");
   const [runError, setRunError] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [pendingWrites, setPendingWrites] = useState<FileWriteOp[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -62,20 +74,50 @@ export default function ChatPanel() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [displayRun?.steps.length, streamedLength]);
 
+  const attachFiles = async () => {
+    const paths = await openDialog({ multiple: true, directory: false });
+    if (!paths) return;
+    const list = Array.isArray(paths) ? paths : [paths];
+    const results = await Promise.all(list.map(readFileForContext));
+    const valid = results.filter(Boolean) as AttachedFile[];
+    setAttachedFiles((prev) => {
+      const existing = new Set(prev.map((f) => f.path));
+      return [...prev, ...valid.filter((f) => !existing.has(f.path))];
+    });
+  };
+
+  const attachFolder = async () => {
+    const folder = await openDialog({ directory: true, multiple: false });
+    if (typeof folder !== "string") return;
+    const { files, skipped } = await readFolderForContext(folder);
+    setAttachedFiles((prev) => {
+      const existing = new Set(prev.map((f) => f.path));
+      return [...prev, ...files.filter((f) => !existing.has(f.path))];
+    });
+    if (skipped > 0) setRunError(`${skipped} file(s) skipped (binary / too large / limit reached)`);
+  };
+
+  const removeAttached = (path: string) =>
+    setAttachedFiles((prev) => prev.filter((f) => f.path !== path));
+
   const run = async () => {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
     const prompt = input.trim();
     setInput("");
     setRunError(null);
 
+    // Prepend attached file context to the prompt sent to the workflow.
+    // The display prompt (stored in activeRun) stays clean.
+    const contextBlock = formatContextBlock(attachedFiles);
+    const fullPrompt = contextBlock + prompt;
+
     const runId = crypto.randomUUID();
     const signal = startRun(runId, prompt);
-    // startRun seeds the live activeRun; the ChatPanel reads it via displayRun.
     setActiveRunId(runId);
 
     try {
       // ── Routing: pick the entry agent for this prompt ──────────────────────
-      const entry = await routeToAgent(prompt, agents, settings.defaultModel, {
+      const entry = await routeToAgent(fullPrompt, agents, settings.defaultModel, {
         baseUrl: settings.ollamaBaseUrl,
         embedModel: settings.embedModel,
         skipSemantic:
@@ -111,7 +153,7 @@ export default function ChatPanel() {
             agent.persona + (agent.prompt ? `\n\n${agent.prompt}` : "");
           const messages: ChatMessage[] = [
             { role: "system", content: system },
-            { role: "user", content: inputContext || prompt },
+            { role: "user", content: inputContext || fullPrompt },
           ];
           let out = "";
           await chatStream(
@@ -149,11 +191,16 @@ export default function ChatPanel() {
         },
       };
 
-      await runWorkflow(entry.id, prompt, signal, deps, runId);
+      await runWorkflow(entry.id, fullPrompt, signal, deps, runId);
 
-      // Persist the finished run (built up in useWorkflowStore) to history.
+      // Persist the finished run to history.
       const finished = useWorkflowStore.getState().activeRun;
       if (finished) await addRun(finished);
+
+      // Parse agent output for proposed file writes → show confirmation UI.
+      const allOutput = finished?.steps.map((s) => s.output ?? "").join("\n") ?? "";
+      const writes = parseWriteFileBlocks(allOutput);
+      if (writes.length > 0) setPendingWrites(writes);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setRunError(msg);
@@ -165,7 +212,7 @@ export default function ChatPanel() {
   const canSubmit = !isRunning && !!input.trim() && !!settings.defaultModel;
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div style={{
@@ -314,14 +361,83 @@ export default function ChatPanel() {
         <StopButton />
       </div>
 
+      {/* ── File change review overlay ────────────────────────────────────── */}
+      {pendingWrites.length > 0 && (
+        <FileChangeReview
+          ops={pendingWrites}
+          onClose={() => setPendingWrites([])}
+        />
+      )}
+
       {/* ── Input bar ─────────────────────────────────────────────────────── */}
       <div style={{
-        padding: "var(--space-4) var(--space-6)",
+        padding: "var(--space-3) var(--space-6) var(--space-4)",
         borderTop: "1px solid oklch(from var(--color-text) l c h / 0.08)",
         display: "flex",
-        gap: "var(--space-3)",
+        flexDirection: "column",
+        gap: "var(--space-2)",
       }}>
-        <textarea
+        {/* Attached file chips */}
+        {attachedFiles.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+            {attachedFiles.map((f) => (
+              <span
+                key={f.path}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "var(--space-1)",
+                  padding: "1px var(--space-2)",
+                  background: "var(--color-surface-3)",
+                  borderRadius: "var(--radius-full)",
+                  fontSize: "0.65rem",
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--color-text-muted)",
+                  maxWidth: 200,
+                }}
+              >
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
+                <button
+                  onClick={() => removeAttached(f.path)}
+                  style={{ color: "var(--color-text-muted)", lineHeight: 1, flexShrink: 0 }}
+                  title="Remove"
+                >×</button>
+              </span>
+            ))}
+            <button
+              onClick={() => setAttachedFiles([])}
+              style={{ fontSize: "0.65rem", color: "var(--color-text-muted)", padding: "1px var(--space-2)" }}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: "var(--space-3)" }}>
+          {/* Attach buttons */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", justifyContent: "flex-end" }}>
+            <button
+              onClick={attachFiles}
+              disabled={isRunning}
+              title="Attach files"
+              style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)", padding: "var(--space-1) var(--space-2)", borderRadius: "var(--radius-sm)", opacity: isRunning ? 0.4 : 1 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 9.5V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3.5" />
+                <path d="M9 1h6v6" /><path d="M15 1L7.5 8.5" />
+              </svg>
+            </button>
+            <button
+              onClick={attachFolder}
+              disabled={isRunning}
+              title="Attach folder"
+              style={{ color: "var(--color-text-muted)", fontSize: "var(--text-sm)", padding: "var(--space-1) var(--space-2)", borderRadius: "var(--radius-sm)", opacity: isRunning ? 0.4 : 1 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M1 4a1 1 0 0 1 1-1h4l2 2h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4z" />
+              </svg>
+            </button>
+          </div>
+
+          <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -364,7 +480,8 @@ export default function ChatPanel() {
         >
           &#9654; Run
         </button>
-      </div>
+        </div>{/* end flex row */}
+      </div>{/* end input bar */}
 
       <style>{`
         @keyframes pulse {
