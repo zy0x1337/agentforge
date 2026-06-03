@@ -31,8 +31,7 @@ serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # HTTP client used by download_gguf (sync, no extra async runtime needed).
-# Keep ureq 2.x — matches the existing streaming implementation in lib.rs.
-ureq = { version = "2", features = ["json"] }
+ureq = { version = "3", features = ["json"] }
 
 # SHA-256 verification for downloaded GGUF files.
 sha2 = "0.10"

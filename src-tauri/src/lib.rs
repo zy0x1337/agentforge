@@ -13,8 +13,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -35,7 +35,14 @@ type CancelMap = Arc<Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>
 #[tauri::command]
 pub fn check_ollama() -> bool {
     Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "http://localhost:11434"])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "http://localhost:11434",
+        ])
         .output()
         .map(|o| o.stdout.starts_with(b"200"))
         .unwrap_or(false)
@@ -83,8 +90,8 @@ pub async fn download_gguf(
     expected_sha256: Option<String>,
     cancel_map: tauri::State<'_, CancelMap>,
 ) -> Result<String, String> {
-    use std::sync::atomic::{AtomicBool, Ordering};
     use sha2::{Digest, Sha256};
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     // Register a cancellation flag for this download.
     let flag = Arc::new(AtomicBool::new(false));
@@ -94,28 +101,37 @@ pub async fn download_gguf(
     }
 
     let emit = |status: &str, received: u64, total: u64, speed: u64, err: Option<String>| {
-        let percent = if total > 0 { ((received as f64 / total as f64) * 100.0) as u8 } else { 0 };
+        let percent = if total > 0 {
+            ((received as f64 / total as f64) * 100.0) as u8
+        } else {
+            0
+        };
         let done = status == "done" || status == "error" || status == "cancelled";
-        let _ = app.emit("download://progress", DownloadProgressEvent {
-            download_id: download_id.clone(),
-            bytes_received: received,
-            total_bytes: total,
-            percent,
-            speed,
-            status: status.to_string(),
-            done,
-            error: err,
-        });
+        let _ = app.emit(
+            "download://progress",
+            DownloadProgressEvent {
+                download_id: download_id.clone(),
+                bytes_received: received,
+                total_bytes: total,
+                percent,
+                speed,
+                status: status.to_string(),
+                done,
+                error: err,
+            },
+        );
     };
 
     // ── HTTP streaming ───────────────────────────────────────────────────
     let response = ureq::get(&url)
-        .set("User-Agent", "AgentForge/1.0")
+        .header("User-Agent", "AgentForge/1.0")
         .call()
         .map_err(|e| format!("HTTP error: {e}"))?;
 
     let total: u64 = response
-        .header("content-length")
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
@@ -124,7 +140,7 @@ pub async fn download_gguf(
     }
     let mut file = std::fs::File::create(&dest_path).map_err(|e| e.to_string())?;
 
-    let mut reader = response.into_reader();
+    let mut reader = response.into_body().into_reader();
     let mut buf = vec![0u8; 65_536];
     let mut received: u64 = 0;
     let mut last_emit_bytes: u64 = 0;
@@ -148,7 +164,9 @@ pub async fn download_gguf(
             Ok(0) => break,
             Ok(n) => {
                 file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
-                if expected_sha256.is_some() { hasher.update(&buf[..n]); }
+                if expected_sha256.is_some() {
+                    hasher.update(&buf[..n]);
+                }
                 received += n as u64;
                 bytes_since_speed += n as u64;
 
@@ -235,11 +253,15 @@ pub async fn import_gguf_to_ollama(
 ) -> Result<(), String> {
     // Write a minimal Modelfile.
     let modelfile_path = std::env::temp_dir().join(format!("{import_id}.Modelfile"));
-    std::fs::write(&modelfile_path, format!("FROM {gguf_path}\n"))
-        .map_err(|e| e.to_string())?;
+    std::fs::write(&modelfile_path, format!("FROM {gguf_path}\n")).map_err(|e| e.to_string())?;
 
     let mut child = Command::new("ollama")
-        .args(["create", &model_name, "--file", modelfile_path.to_str().unwrap()])
+        .args([
+            "create",
+            &model_name,
+            "--file",
+            modelfile_path.to_str().unwrap(),
+        ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -248,21 +270,35 @@ pub async fn import_gguf_to_ollama(
     let stdout = child.stdout.take().unwrap();
     let stderr = child.stderr.take().unwrap();
 
-    let app_out = app.clone(); let id_out = import_id.clone();
-    let app_err = app.clone(); let id_err = import_id.clone();
+    let app_out = app.clone();
+    let id_out = import_id.clone();
+    let app_err = app.clone();
+    let id_err = import_id.clone();
 
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines().flatten() {
-            let _ = app_out.emit("ollama://import", OllamaImportEvent {
-                import_id: id_out.clone(), status: line, done: false, error: None,
-            });
+            let _ = app_out.emit(
+                "ollama://import",
+                OllamaImportEvent {
+                    import_id: id_out.clone(),
+                    status: line,
+                    done: false,
+                    error: None,
+                },
+            );
         }
     });
     thread::spawn(move || {
         for line in BufReader::new(stderr).lines().flatten() {
-            let _ = app_err.emit("ollama://import", OllamaImportEvent {
-                import_id: id_err.clone(), status: line, done: false, error: None,
-            });
+            let _ = app_err.emit(
+                "ollama://import",
+                OllamaImportEvent {
+                    import_id: id_err.clone(),
+                    status: line,
+                    done: false,
+                    error: None,
+                },
+            );
         }
     });
 
@@ -270,14 +306,25 @@ pub async fn import_gguf_to_ollama(
     let _ = std::fs::remove_file(&modelfile_path);
     let code = status.code().unwrap_or(-1);
 
-    let _ = app.emit("ollama://import", OllamaImportEvent {
-        import_id: import_id.clone(),
-        status: format!("exit {code}"),
-        done: true,
-        error: if code == 0 { None } else { Some(format!("ollama create exited with code {code}")) },
-    });
+    let _ = app.emit(
+        "ollama://import",
+        OllamaImportEvent {
+            import_id: import_id.clone(),
+            status: format!("exit {code}"),
+            done: true,
+            error: if code == 0 {
+                None
+            } else {
+                Some(format!("ollama create exited with code {code}"))
+            },
+        },
+    );
 
-    if code == 0 { Ok(()) } else { Err(format!("ollama create failed (exit {code})")) }
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(format!("ollama create failed (exit {code})"))
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -325,40 +372,65 @@ pub async fn run_tool_command(
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(timeout_secs));
             #[cfg(windows)]
-            let _ = Command::new("taskkill").args(["/PID", &child_id.to_string(), "/F"]).output();
+            let _ = Command::new("taskkill")
+                .args(["/PID", &child_id.to_string(), "/F"])
+                .output();
             #[cfg(not(windows))]
-            let _ = Command::new("kill").args(["-9", &child_id.to_string()]).output();
-            let _ = app_wdog.emit("tool://done", ToolDoneEvent {
-                run_id: run_id_wdog, exit_code: -1,
-                error: Some(format!("Killed after {timeout_secs}s timeout")),
-            });
+            let _ = Command::new("kill")
+                .args(["-9", &child_id.to_string()])
+                .output();
+            let _ = app_wdog.emit(
+                "tool://done",
+                ToolDoneEvent {
+                    run_id: run_id_wdog,
+                    exit_code: -1,
+                    error: Some(format!("Killed after {timeout_secs}s timeout")),
+                },
+            );
         });
     }
 
     let stdout = child.stdout.take().unwrap();
-    let app_out = app.clone(); let run_id_out = run_id.clone();
+    let app_out = app.clone();
+    let run_id_out = run_id.clone();
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines().flatten() {
-            let _ = app_out.emit("tool://output", ToolOutputEvent {
-                run_id: run_id_out.clone(), line, stream: "stdout".into(),
-            });
+            let _ = app_out.emit(
+                "tool://output",
+                ToolOutputEvent {
+                    run_id: run_id_out.clone(),
+                    line,
+                    stream: "stdout".into(),
+                },
+            );
         }
     });
 
     let stderr = child.stderr.take().unwrap();
-    let app_err = app.clone(); let run_id_err = run_id.clone();
+    let app_err = app.clone();
+    let run_id_err = run_id.clone();
     thread::spawn(move || {
         for line in BufReader::new(stderr).lines().flatten() {
-            let _ = app_err.emit("tool://output", ToolOutputEvent {
-                run_id: run_id_err.clone(), line, stream: "stderr".into(),
-            });
+            let _ = app_err.emit(
+                "tool://output",
+                ToolOutputEvent {
+                    run_id: run_id_err.clone(),
+                    line,
+                    stream: "stderr".into(),
+                },
+            );
         }
     });
 
     let status = child.wait().map_err(|e| e.to_string())?;
-    let _ = app.emit("tool://done", ToolDoneEvent {
-        run_id, exit_code: status.code().unwrap_or(-1), error: None,
-    });
+    let _ = app.emit(
+        "tool://done",
+        ToolDoneEvent {
+            run_id,
+            exit_code: status.code().unwrap_or(-1),
+            error: None,
+        },
+    );
     Ok(())
 }
 
@@ -376,9 +448,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Register the per-download cancellation map as app state.
-            app.manage(Arc::new(Mutex::new(
-                HashMap::<String, Arc<std::sync::atomic::AtomicBool>>::new(),
-            )) as CancelMap);
+            app.manage(Arc::new(Mutex::new(HashMap::<
+                String,
+                Arc<std::sync::atomic::AtomicBool>,
+            >::new())) as CancelMap);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
