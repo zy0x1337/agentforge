@@ -8,7 +8,7 @@
  * the workflow runner can decide whether to use static or dynamic mode.
  */
 
-import { readDir, readTextFile, mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
+import { readDir, readTextFile, mkdir, writeTextFile, remove } from "@tauri-apps/plugin-fs";
 import matter from "gray-matter";
 import type { Agent, AgentFrontmatter } from "@/types";
 
@@ -171,4 +171,9 @@ export async function createAgent(
 
   await writeTextFile(`${dir}/${REQUIRED_FILE}`, persona);
   return dir;
+}
+
+/** Permanently delete an agent folder and all its contents. */
+export async function deleteAgent(agentPath: string): Promise<void> {
+  await remove(agentPath, { recursive: true });
 }

@@ -23,6 +23,11 @@
       "identifier": "fs:allow-mkdir",
       "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
       "deny": [{ "path": "$HOME/.ssh/**" }]
+    },
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
+      "deny": [{ "path": "$HOME/.ssh/**" }]
     }
   ]
 }

@@ -20,7 +20,7 @@
  * The FrontmatterPanel is shown only for persona.md (the canonical
  * metadata file). For other tabs it is hidden.
  */
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, drawSelection } from "@codemirror/view";
 import { EditorState as CMState } from "@codemirror/state";
 import { defaultKeymap, historyKeymap, history } from "@codemirror/commands";
@@ -96,6 +96,9 @@ export function AgentEditor() {
     anyDirty,
     saving,
   } = useEditorStore();
+
+  const [showPreview, setShowPreview] = useState(true);
+  const [showFm, setShowFm]           = useState(true);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const cmView = useRef<EditorView | null>(null);
@@ -175,6 +178,32 @@ export function AgentEditor() {
           })}
         </div>
         <div className={styles.tabActions}>
+          {/* Preview toggle */}
+          <button
+            className={styles.actionBtn}
+            onClick={() => setShowPreview((v) => !v)}
+            title={showPreview ? "Hide preview" : "Show preview"}
+            style={{ opacity: showPreview ? 1 : 0.4 }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M1 8s3-5 7-5 7 5 7 5-3 5-7 5-7-5-7-5z" />
+              <circle cx="8" cy="8" r="2" />
+              {!showPreview && <path d="M2 2l12 12" />}
+            </svg>
+          </button>
+
+          {/* Frontmatter panel toggle — only relevant on persona tab */}
+          {activeTab === "persona" && (
+            <button
+              className={styles.actionBtn}
+              onClick={() => setShowFm((v) => !v)}
+              title={showFm ? "Hide frontmatter panel" : "Show frontmatter panel"}
+              style={{ opacity: showFm ? 1 : 0.4, fontFamily: "var(--font-mono)", fontSize: "0.6rem", letterSpacing: "0.04em" }}
+            >
+              FM
+            </button>
+          )}
+
           <button
             className={styles.actionBtn}
             onClick={() => save()}
@@ -214,15 +243,17 @@ export function AgentEditor() {
         <div className={styles.editorPane} ref={editorRef} />
 
         {/* Preview pane */}
-        <div className={styles.previewPane}>
-          <div
-            className={styles.preview}
-            dangerouslySetInnerHTML={{ __html: previewHtml }}
-          />
-        </div>
+        {showPreview && (
+          <div className={styles.previewPane}>
+            <div
+              className={styles.preview}
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          </div>
+        )}
 
         {/* Frontmatter panel — persona tab only */}
-        {activeTab === "persona" && <FrontmatterPanel />}
+        {activeTab === "persona" && showFm && <FrontmatterPanel />}
       </div>
     </div>
   );
