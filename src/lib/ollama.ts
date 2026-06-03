@@ -1,5 +1,10 @@
 import type { OllamaModel, ChatMessage } from "@/types";
 
+/** Treat "model" and "model:latest" as the same name. */
+export function normalizeModelName(name: string): string {
+  return name.replace(/:latest$/i, "");
+}
+
 export async function isOllamaRunning(base = "http://localhost:11434"): Promise<boolean> {
   try {
     const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(2000) });

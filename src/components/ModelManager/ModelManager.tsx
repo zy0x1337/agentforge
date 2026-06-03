@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useAppStore } from "@/store/useAppStore";
-import { pullModel, deleteModel, listLocalModels } from "@/lib/ollama";
+import { pullModel, deleteModel, listLocalModels, normalizeModelName } from "@/lib/ollama";
 
 const POPULAR = [
   { name: "llama3.2:3b",       label: "Llama 3.2 3B",      size: "~2 GB",   tags: ["fast", "general"] },
@@ -73,7 +73,7 @@ export default function ModelManager() {
     return Array.from(map.entries()).map(([name, usedBy]) => ({
       name,
       usedBy,
-      installed: localModels.some((m) => m.name === name),
+      installed: localModels.some((m) => normalizeModelName(m.name) === normalizeModelName(name)),
     }));
   }, [agents, settings.embedModel, localModels]);
 

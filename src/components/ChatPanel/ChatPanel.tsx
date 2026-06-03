@@ -22,7 +22,7 @@ import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
 import { runWorkflow, type WorkflowRunnerDeps } from "@/lib/workflowRunner";
 import { routeToAgent } from "@/lib/router";
-import { chatStream } from "@/lib/ollama";
+import { chatStream, normalizeModelName } from "@/lib/ollama";
 import StopButton from "./StopButton";
 import type { Agent, ChatMessage, WorkflowRun } from "@/types";
 
@@ -97,7 +97,10 @@ export default function ChatPanel() {
           // otherwise fall back to the app default so runs never silently fail.
           const agentModel = agent.frontmatter.model;
           const agentModelInstalled =
-            !!agentModel && localModels.some((m) => m.name === agentModel);
+            !!agentModel &&
+            localModels.some(
+              (m) => normalizeModelName(m.name) === normalizeModelName(agentModel),
+            );
           const model =
             overrides?.model ||
             (agentModelInstalled ? agentModel : null) ||
