@@ -266,23 +266,68 @@ export default function ModelManager() {
         {/* ── Custom pull ──────────────────────────────────────────────────── */}
         <section>
           <h2 style={HEADING}>Custom Model</h2>
+
+          {/* Active pull indicator — visible whenever any model is downloading */}
+          {pullingModel && (
+            <div style={{
+              marginBottom: "var(--space-3)",
+              padding: "var(--space-3) var(--space-4)",
+              background: "var(--surface-2)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid var(--border)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text)" }}>
+                  {pullingModel}
+                </span>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                  {pullProgress > 0 ? `${pullProgress}%` : "starting…"}
+                </span>
+              </div>
+              <div style={{ height: 3, background: "var(--surface-3)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%",
+                  width: pullProgress > 0 ? `${pullProgress}%` : "100%",
+                  background: "var(--primary)",
+                  transition: pullProgress > 0 ? "width 0.3s" : "none",
+                  opacity: pullProgress > 0 ? 1 : 0.4,
+                  animation: pullProgress === 0 ? "pulse 1.2s ease-in-out infinite" : "none",
+                }} />
+              </div>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: "var(--space-3)" }}>
             <input
               value={customModel}
               onChange={(e) => setCustomModel(e.target.value)}
-              placeholder="e.g. qwen2.5:32b"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && customModel && !pullingModel) {
+                  pull(customModel);
+                  setCustomModel("");
+                }
+              }}
+              placeholder="e.g. qwen3:8b"
+              disabled={!!pullingModel}
               style={{
                 flex: 1, padding: "var(--space-2) var(--space-4)",
                 background: "var(--surface-2)", border: "1px solid var(--border)",
                 borderRadius: "var(--radius-md)", color: "var(--text)",
                 fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)",
+                opacity: pullingModel ? 0.5 : 1,
               }}
             />
             <button
-              onClick={() => { if (customModel) { pull(customModel); setCustomModel(""); } }}
-              style={{ padding: "var(--space-2) var(--space-6)", background: "var(--primary)", color: "#fff", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)" }}
+              onClick={() => { if (customModel && !pullingModel) { pull(customModel); setCustomModel(""); } }}
+              disabled={!customModel || !!pullingModel}
+              style={{
+                padding: "var(--space-2) var(--space-6)",
+                background: "var(--primary)", color: "#fff",
+                borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)",
+                opacity: (!customModel || !!pullingModel) ? 0.4 : 1,
+              }}
             >
-              Pull
+              {pullingModel ? "Pulling…" : "Pull"}
             </button>
           </div>
         </section>
