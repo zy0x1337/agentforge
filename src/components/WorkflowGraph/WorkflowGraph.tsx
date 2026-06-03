@@ -54,7 +54,7 @@ function GraphInner() {
   const { fitView } = useReactFlow();
   const { nodes, edges } = useGraphStore();
   const { activeRun }    = useWorkflowStore();
-  const { activeRunId, history } = useHistoryStore();
+  const { activeRunId, runs: history } = useHistoryStore();
   const { agents }       = useAppStore();
 
   const [showMinimap, setShowMinimap] = useState(true);

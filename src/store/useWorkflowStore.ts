@@ -27,6 +27,7 @@
  */
 
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 import type { RunEvent, WorkflowRun, WorkflowStep } from '@/types';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -96,7 +97,8 @@ export interface WorkflowStoreState {
   handleEvent: (event: RunEvent) => void;
 }
 
-export const useWorkflowStore = create<WorkflowStoreState>((set, get) => ({
+export const useWorkflowStore = create<WorkflowStoreState>()(
+  subscribeWithSelector((set, get) => ({
   activeRun: null,
   isRunning: false,
   abortController: null,
@@ -269,4 +271,5 @@ export const useWorkflowStore = create<WorkflowStoreState>((set, get) => ({
       }
     });
   },
-}));
+  })),
+);

@@ -91,6 +91,33 @@ export async function chat(
   return data.message?.content ?? "";
 }
 
+/** Request-object form of {@link chat} — convenient for callers that build a
+ *  request body (e.g. parallelRunner merge strategies). */
+export interface OllamaChatRequest {
+  model: string;
+  messages: ChatMessage[];
+  options?: {
+    temperature?: number;
+    num_predict?: number;
+  };
+  base?: string;
+}
+
+/** Non-streaming chat using a request object. Wraps {@link chat}. */
+export async function ollamaChat(
+  req: OllamaChatRequest,
+  signal?: AbortSignal
+): Promise<string> {
+  return chat(
+    req.model,
+    req.messages,
+    req.options?.temperature,
+    req.options?.num_predict,
+    signal,
+    req.base
+  );
+}
+
 /** Streaming chat — calls onChunk for each token */
 export async function chatStream(
   model: string,

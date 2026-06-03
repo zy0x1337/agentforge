@@ -20,9 +20,11 @@ import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { useWorkflowStore } from "@/store/useWorkflowStore";
 import { useHistoryStore } from "@/store/useHistoryStore";
-import { runWorkflow } from "@/lib/workflowRunner";
+import { runWorkflow, type WorkflowRunnerDeps } from "@/lib/workflowRunner";
+import { routeToAgent } from "@/lib/router";
+import { chatStream } from "@/lib/ollama";
 import StopButton from "./StopButton";
-import type { Agent, WorkflowRun } from "@/types";
+import type { Agent, ChatMessage, WorkflowRun } from "@/types";
 
 export default function ChatPanel() {
   const { agents, settings } = useAppStore();
@@ -50,10 +52,14 @@ export default function ChatPanel() {
     ?? runs[0]
     ?? null;
 
+  // Length of all streamed output so far — drives auto-scroll on each chunk.
+  const streamedLength =
+    activeRun?.steps.map((s) => s.output).join("").length ?? 0;
+
   // Auto-scroll to bottom when new steps/chunks arrive
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayRun?.steps.length, activeRun?.steps.map((s) => s.output).join("").length]);
+  }, [displayRun?.steps.length, streamedLength]);
 
   const run = async () => {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
@@ -62,29 +68,77 @@ export default function ChatPanel() {
 
     const runId = crypto.randomUUID();
     const signal = startRun(runId, prompt);
-
-    // Push an in-progress placeholder to history so the panel shows immediately
-    const placeholder: WorkflowRun = {
-      id: runId,
-      startedAt: Date.now(),
-      initialPrompt: prompt,
-      steps: [],
-      status: "running",
-    };
-    await addRun(placeholder);
+    // startRun seeds the live activeRun; the ChatPanel reads it via displayRun.
     setActiveRunId(runId);
 
     try {
-      const completed = await runWorkflow(
-        prompt,
-        agents,
-        settings.defaultModel,
-        settings.defaultModel,
-        handleEvent,
+      // ── Routing: pick the entry agent for this prompt ──────────────────────
+      const entry = await routeToAgent(prompt, agents, settings.defaultModel, {
+        baseUrl: settings.ollamaBaseUrl,
+        embedModel: settings.embedModel,
+        skipSemantic:
+          settings.routingMode === "no-semantic" ||
+          settings.routingMode === "rules-only",
+        skipLlm: settings.routingMode === "rules-only",
         signal,
-      );
-      // Replace placeholder with the finished run (persists to disk)
-      await addRun(completed);
+      });
+      if (!entry) throw new Error("No agent matched this prompt");
+
+      // ── Dependency injection for the workflow runner ───────────────────────
+      const agentById = new Map(agents.map((a) => [a.id, a]));
+
+      const deps: WorkflowRunnerDeps = {
+        runSingleAgent: async (agentId, inputContext, sig, onChunk) => {
+          const agent = agentById.get(agentId);
+          if (!agent) throw new Error(`Unknown agent: ${agentId}`);
+          const model = agent.frontmatter.model || settings.defaultModel;
+          const system =
+            agent.persona + (agent.prompt ? `\n\n${agent.prompt}` : "");
+          const messages: ChatMessage[] = [
+            { role: "system", content: system },
+            { role: "user", content: inputContext || prompt },
+          ];
+          let out = "";
+          await chatStream(
+            model,
+            messages,
+            (token) => {
+              out += token;
+              onChunk(token);
+            },
+            agent.frontmatter.temperature ?? 0.7,
+            sig,
+            settings.ollamaBaseUrl,
+          );
+          return out;
+        },
+        emitEvent: handleEvent,
+        getAgentMeta: (agentId) => {
+          const a = agentById.get(agentId);
+          if (!a) return undefined;
+          return {
+            id: a.id,
+            model: a.frontmatter.model,
+            maxTokens: a.frontmatter.max_tokens,
+            contextMode: a.frontmatter.context_mode,
+            nextAgents: a.frontmatter.next_agents,
+          };
+        },
+        readAgentFile: async (agentId, filename) => {
+          const a = agentById.get(agentId);
+          if (!a) return null;
+          if (filename === "workflow.md") return a.workflow ?? null;
+          if (filename === "persona.md") return a.persona ?? null;
+          if (filename === "prompt.md") return a.prompt ?? null;
+          return null;
+        },
+      };
+
+      await runWorkflow(entry.id, prompt, signal, deps, runId);
+
+      // Persist the finished run (built up in useWorkflowStore) to history.
+      const finished = useWorkflowStore.getState().activeRun;
+      if (finished) await addRun(finished);
     } catch (err) {
       console.error("[ChatPanel] workflow error:", err);
     } finally {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { loadSettings, saveSettings } from "@/lib/settings";
-import type { Agent } from "@/types";
+import type { Agent, OllamaModel } from "@/types";
 
 export type Panel = "models" | "agents" | "chat" | "graph";
 
@@ -25,7 +25,7 @@ interface AppState {
   setOllamaRunning: (v: boolean) => void;
 
   // Models
-  localModels: { name: string; size: number; modified: string }[];
+  localModels: OllamaModel[];
   setLocalModels: (m: AppState["localModels"]) => void;
   pullingModel: string | null;
   pullProgress: number;

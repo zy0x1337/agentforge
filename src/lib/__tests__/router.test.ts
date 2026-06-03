@@ -27,7 +27,7 @@ function makeAgent(
     id,
     path: `/agents/${id}`,
     frontmatter: { name, description, triggers, next_agents: nextAgents },
-    files: [],
+    persona: "",
   };
 }
 
@@ -39,7 +39,6 @@ const AGENTS: Agent[] = [
 ];
 
 const MODEL  = 'llama3.2:3b';
-const SIGNAL = new AbortController().signal;
 
 // ── routeToAgent ──────────────────────────────────────────────────────────────
 
@@ -125,7 +124,7 @@ describe('routeToAgent', () => {
     expect(result?.id).toBe('coder');
   });
 
-  it('skipLlm: returns first routable agent when all tiers miss', async () => {
+  it('skipLlm: returns null when all tiers miss', async () => {
     const result = await routeToAgent(
       'obscure xyz',
       AGENTS,

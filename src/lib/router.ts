@@ -217,8 +217,8 @@ export async function routeToAgent(
 
   // ── Tier 3: LLM ───────────────────────────────────────────────────────────
   if (skipLlm) {
-    console.debug("[router] LLM tier skipped — returning first available agent");
-    return routable[0] ?? null;
+    console.debug("[router] LLM tier skipped — no rule/semantic match, returning null");
+    return null;
   }
 
   const llmResult = await llmBasedMatch(prompt, routable, routerModel, signal);

@@ -13,7 +13,7 @@ function makeStep(
   overrides: Partial<ParallelGroupStep> = {}
 ): ParallelGroupStep {
   return {
-    type: 'parallel',
+    mode: 'parallel',
     agents,
     merge_strategy: 'concat',
     timeout_ms: 5_000,

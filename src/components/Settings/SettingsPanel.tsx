@@ -65,12 +65,14 @@ function TextInput({
   id,
   value,
   onChange,
+  onBlur,
   placeholder,
   monospace = false,
 }: {
   id?: string;
   value: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
   placeholder?: string;
   monospace?: boolean;
 }) {
@@ -80,6 +82,7 @@ function TextInput({
       className={`${styles.input} ${monospace ? styles.mono : ""}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
       placeholder={placeholder}
       spellCheck={false}
       autoComplete="off"

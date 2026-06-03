@@ -23,7 +23,7 @@ import { create } from 'zustand';
 import { type Node, type Edge, Position } from '@xyflow/react';
 import dagre from 'dagre';
 import { useWorkflowStore } from './useWorkflowStore';
-import type { WorkflowRun, WorkflowStep } from '@/types';
+import type { WorkflowRun } from '@/types';
 import type { AgentNodeData } from '@/components/WorkflowGraph/AgentNode';
 import type { EdgeWithLabelData } from '@/components/WorkflowGraph/EdgeWithLabel';
 

@@ -51,7 +51,7 @@ function buildExtensions(onChange: (v: string) => void, onSave: () => void) {
     lineNumbers(),
     highlightActiveLineGutter(),
     drawSelection(),
-    markdown({ base: markdown() }),
+    markdown(),
     yaml(),
     syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     isDarkTheme() ? oneDark : [],
@@ -118,7 +118,7 @@ export function AgentEditor() {
       doc: initialContent,
       extensions: buildExtensions(
         (v) => setContent(activeTab, v),
-        () => saveTab(activeTab)
+        handleSave
       ),
     });
 
