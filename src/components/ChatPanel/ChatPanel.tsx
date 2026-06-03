@@ -27,7 +27,7 @@ import StopButton from "./StopButton";
 import type { Agent, ChatMessage, WorkflowRun } from "@/types";
 
 export default function ChatPanel() {
-  const { agents, settings } = useAppStore();
+  const { agents, settings, localModels } = useAppStore();
 
   const {
     activeRun,
@@ -93,9 +93,15 @@ export default function ChatPanel() {
         runSingleAgent: async (agentId, inputContext, sig, onChunk, overrides) => {
           const agent = agentById.get(agentId);
           if (!agent) throw new Error(`Unknown agent: ${agentId}`);
-          // Step-level overrides (from workflow.md) win over the agent's persona.
+          // Step-level overrides win; agent model used only if it's installed,
+          // otherwise fall back to the app default so runs never silently fail.
+          const agentModel = agent.frontmatter.model;
+          const agentModelInstalled =
+            !!agentModel && localModels.some((m) => m.name === agentModel);
           const model =
-            overrides?.model || agent.frontmatter.model || settings.defaultModel;
+            overrides?.model ||
+            (agentModelInstalled ? agentModel : null) ||
+            settings.defaultModel;
           const temperature =
             overrides?.temperature ?? agent.frontmatter.temperature ?? 0.7;
           const system =

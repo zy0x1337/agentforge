@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useAppStore } from "@/store/useAppStore";
 import { pullModel, deleteModel, listLocalModels } from "@/lib/ollama";
 
@@ -13,6 +13,14 @@ const POPULAR = [
   { name: "nomic-embed-text",  label: "Nomic Embed",       size: "~274 MB", tags: ["embedding"] },
 ];
 
+const HEADING = {
+  fontSize: "var(--text-xs)",
+  color: "var(--text-muted)",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.08em",
+  marginBottom: "var(--space-3)",
+};
+
 export default function ModelManager() {
   const {
     localModels,
@@ -22,6 +30,7 @@ export default function ModelManager() {
     setPullProgress,
     settings,
     updateSettings,
+    agents,
   } = useAppStore();
   const [customModel, setCustomModel] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -32,7 +41,7 @@ export default function ModelManager() {
       await pullModel(name, (_status, pct) => setPullProgress(name, pct ?? 0));
     } finally {
       setPullProgress(null);
-      const fresh = await listLocalModels().catch(() => []);
+      const fresh = await listLocalModels(settings.ollamaBaseUrl).catch(() => []);
       setLocalModels(fresh);
     }
   };
@@ -45,21 +54,112 @@ export default function ModelManager() {
 
   const installed = new Set(localModels.map((m) => m.name));
 
+  // Build the "required by agents" list: agent models + embed model
+  const requiredModels = useMemo(() => {
+    const map = new Map<string, string[]>(); // modelName → usedBy labels
+
+    for (const agent of agents) {
+      const model = agent.frontmatter.model?.trim();
+      if (model) {
+        if (!map.has(model)) map.set(model, []);
+        map.get(model)!.push(agent.frontmatter.name || agent.id);
+      }
+    }
+
+    const embedModel = (settings.embedModel || "nomic-embed-text").trim();
+    if (!map.has(embedModel)) map.set(embedModel, []);
+    map.get(embedModel)!.push("semantic routing");
+
+    return Array.from(map.entries()).map(([name, usedBy]) => ({
+      name,
+      usedBy,
+      installed: localModels.some((m) => m.name === name),
+    }));
+  }, [agents, settings.embedModel, localModels]);
+
+  const missingCount = requiredModels.filter((r) => !r.installed).length;
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ padding: "var(--space-6)", borderBottom: "1px solid var(--border)" }}>
         <h1 style={{ fontSize: "var(--text-lg)", color: "var(--text)", marginBottom: "var(--space-1)" }}>Models</h1>
         <p style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>
           {localModels.length} installed
+          {missingCount > 0 && (
+            <span style={{ color: "var(--error)", marginLeft: "var(--space-3)" }}>
+              · {missingCount} required model{missingCount !== 1 ? "s" : ""} missing
+            </span>
+          )}
         </p>
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: "var(--space-6)", display: "flex", flexDirection: "column", gap: "var(--space-8)" }}>
 
-        {/* Installed models */}
+        {/* ── Required by agents ──────────────────────────────────────────── */}
+        {agents.length > 0 && (
+          <section>
+            <h2 style={HEADING}>Required by agents</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+              {requiredModels.map(({ name, usedBy, installed: isInstalled }) => {
+                const isPulling = pullingModel === name;
+                return (
+                  <div key={name} style={{
+                    padding: "var(--space-3) var(--space-4)",
+                    background: "var(--surface-2)",
+                    borderRadius: "var(--radius-md)",
+                    border: isInstalled
+                      ? "1px solid transparent"
+                      : "1px solid color-mix(in oklab, var(--error) 40%, transparent)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
+                          {name}
+                        </span>
+                        <span style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", marginLeft: "var(--space-2)" }}>
+                          {usedBy.join(", ")}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+                        {isInstalled ? (
+                          <span style={{ fontSize: "var(--text-xs)", color: "var(--success, #4ade80)" }}>✓</span>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: "var(--text-xs)", color: "var(--error)" }}>missing</span>
+                            <button
+                              onClick={() => !pullingModel && pull(name)}
+                              disabled={!!pullingModel}
+                              style={{
+                                fontSize: "var(--text-xs)",
+                                padding: "2px var(--space-3)",
+                                borderRadius: "var(--radius-full)",
+                                background: "var(--primary)",
+                                color: "#fff",
+                                opacity: pullingModel && !isPulling ? 0.4 : 1,
+                              }}
+                            >
+                              {isPulling ? `${pullProgress}%` : "Pull"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {isPulling && (
+                      <div style={{ height: 2, background: "var(--surface-3)", borderRadius: 1, overflow: "hidden", marginTop: "var(--space-2)" }}>
+                        <div style={{ height: "100%", width: `${pullProgress}%`, background: "var(--primary)", transition: "width 0.3s" }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── Installed models ────────────────────────────────────────────── */}
         {localModels.length > 0 && (
           <section>
-            <h2 style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-3)" }}>Installed</h2>
+            <h2 style={HEADING}>Installed</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
               {localModels.map((m) => (
                 <div key={m.name} style={{
@@ -117,9 +217,9 @@ export default function ModelManager() {
           </section>
         )}
 
-        {/* Popular models grid */}
+        {/* ── Popular models grid ──────────────────────────────────────────── */}
         <section>
-          <h2 style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-3)" }}>Popular Models</h2>
+          <h2 style={HEADING}>Popular Models</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "var(--space-3)" }}>
             {POPULAR.map((m) => {
               const isPulling = pullingModel === m.name;
@@ -163,9 +263,9 @@ export default function ModelManager() {
           </div>
         </section>
 
-        {/* Custom pull */}
+        {/* ── Custom pull ──────────────────────────────────────────────────── */}
         <section>
-          <h2 style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "var(--space-3)" }}>Custom Model</h2>
+          <h2 style={HEADING}>Custom Model</h2>
           <div style={{ display: "flex", gap: "var(--space-3)" }}>
             <input
               value={customModel}
