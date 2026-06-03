@@ -9,6 +9,14 @@ src-tauri/target/
 # Tauri
 src-tauri/gen/
 
+# Generated mobile / Windows Store icons (desktop-only app — tauri.conf.json
+# references only the desktop rasters, which are committed). Regenerate with
+# `pnpm tauri icon src-tauri/icons/icon.svg`.
+src-tauri/icons/Square*Logo.png
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
 # Env
 .env
 .env.local
