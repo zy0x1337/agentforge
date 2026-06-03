@@ -11,7 +11,6 @@ import { enrichGgufFile, sortGgufFiles, filterGgufFiles, type EnrichedGgufFile, 
 import { QuantBadge } from './QuantBadge';
 import { ProviderFilter } from './ProviderFilter';
 import { DownloadButton } from './DownloadButton';
-import { KNOWN_PROVIDERS } from '../../lib/providers';
 
 interface Props {
   repoId: string;

@@ -8,12 +8,25 @@
  * the workflow runner can decide whether to use static or dynamic mode.
  */
 
-import { readDir, readTextFile } from "@tauri-apps/plugin-fs";
+import { readDir, readTextFile, mkdir, writeTextFile } from "@tauri-apps/plugin-fs";
 import matter from "gray-matter";
 import type { Agent, AgentFrontmatter } from "@/types";
 
 const REQUIRED_FILE = "persona.md";
-const OPTIONAL_FILES = ["prompt.md", "workflow.md"] as const;
+
+/**
+ * Lightweight agent descriptor used by the workflow/parallel runners to resolve
+ * per-agent execution settings (model, token budget, context mode) without
+ * passing the full Agent object around.
+ */
+export interface AgentMeta {
+  id: string;
+  model?: string;
+  maxTokens?: number;
+  contextMode?: "full" | "summary" | "none";
+  /** Sequential successor agent ids (from frontmatter `next_agents`). */
+  nextAgents?: string[];
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -114,6 +127,44 @@ export async function saveAgentFile(
   filename: string,
   content: string
 ): Promise<void> {
-  const { writeTextFile } = await import("@tauri-apps/plugin-fs");
   await writeTextFile(`${agentPath}/${filename}`, content);
+}
+
+/**
+ * Create a new agent folder under agentsDir with a scaffolded persona.md.
+ * The folder name is derived from a slugified version of `name`.
+ * Returns the absolute path of the created agent folder.
+ */
+export async function createAgent(
+  agentsDir: string,
+  name: string
+): Promise<string> {
+  const id = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!id) throw new Error("Invalid agent name");
+
+  const dir = `${agentsDir}/${id}`;
+  await mkdir(dir, { recursive: true });
+
+  const persona = [
+    "---",
+    `name: ${name}`,
+    "description: ",
+    "model: ",
+    "temperature: 0.7",
+    "triggers: []",
+    "next_agents: []",
+    "context_mode: summary",
+    "---",
+    "",
+    `You are ${name}.`,
+    "",
+  ].join("\n");
+
+  await writeTextFile(`${dir}/${REQUIRED_FILE}`, persona);
+  return dir;
 }

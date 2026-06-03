@@ -42,7 +42,7 @@ function parseFrontmatter(src: string): { fm: FM; body: string } {
       // Inline list: [a, b, c]
       if (rawVal.startsWith("[")) {
         fm[key] = rawVal
-          .replace(/[\[\]]/g, "")
+          .replace(/[[\]]/g, "")
           .split(",")
           .map((s) => s.trim().replace(/^"|"$/g, ""))
           .filter(Boolean);

@@ -10,14 +10,15 @@ import {
   BaseEdge,
   EdgeLabelRenderer,
   getSmoothStepPath,
+  type Edge,
   type EdgeProps,
 } from "@xyflow/react";
 import styles from "./EdgeWithLabel.module.css";
 
-export interface EdgeWithLabelData {
+export type EdgeWithLabelData = {
   label?: string;         // context mode: "full" | "summary" | "none"
   animated?: boolean;     // true when source is done / target is running
-}
+};
 
 export function EdgeWithLabel({
   id,
@@ -28,7 +29,7 @@ export function EdgeWithLabel({
   sourcePosition,
   targetPosition,
   data,
-}: EdgeProps<EdgeWithLabelData>) {
+}: EdgeProps<Edge<EdgeWithLabelData>>) {
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
     sourceY,

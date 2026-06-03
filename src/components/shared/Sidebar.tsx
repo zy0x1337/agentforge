@@ -83,7 +83,7 @@ function formatDuration(ms: number): string {
 
 export function Sidebar() {
   const { activePanel, setActivePanel, ollamaRunning } = useAppStore();
-  const { history, activeRunId, setActiveRunId, clearHistory } = useHistoryStore();
+  const { runs: history, activeRunId, setActiveRunId, clearHistory } = useHistoryStore();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (

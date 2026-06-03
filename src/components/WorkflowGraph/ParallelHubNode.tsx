@@ -11,21 +11,21 @@
  */
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { MergeStrategy } from '@/types';
 import styles from './ParallelHubNode.module.css';
 
-export interface ParallelHubNodeData {
+export type ParallelHubNodeData = {
   label: string;
   status: 'pending' | 'running' | 'done' | 'error' | 'aborted';
   strategy?: MergeStrategy;
   agentCount?: number;
-}
+};
 
 export const ParallelHubNode = memo(function ParallelHubNode({
   data,
   selected,
-}: NodeProps<ParallelHubNodeData>) {
+}: NodeProps<Node<ParallelHubNodeData>>) {
   const { label, status, strategy } = data;
   const isRunning = status === 'running';
 

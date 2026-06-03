@@ -10,23 +10,23 @@
  */
 
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import type { MergeStrategy } from '@/types';
 import styles from './MergeFanInNode.module.css';
 
-export interface MergeFanInNodeData {
+export type MergeFanInNodeData = {
   label: string;
   status: 'pending' | 'running' | 'done' | 'error' | 'aborted';
   strategy: MergeStrategy;
   succeededCount: number;
   totalCount: number;
   outputPreview?: string;
-}
+};
 
 export const MergeFanInNode = memo(function MergeFanInNode({
   data,
   selected,
-}: NodeProps<MergeFanInNodeData>) {
+}: NodeProps<Node<MergeFanInNodeData>>) {
   const { label, status, strategy, succeededCount, totalCount, outputPreview } = data;
   const allFailed = succeededCount === 0;
   const someFailed = succeededCount < totalCount;

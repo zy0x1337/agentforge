@@ -11,10 +11,10 @@
  */
 
 import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import styles from "./AgentNode.module.css";
 
-export interface AgentNodeData {
+export type AgentNodeData = {
   label: string;
   model?: string;
   status?: "pending" | "running" | "done" | "error" | "aborted";
@@ -23,12 +23,12 @@ export interface AgentNodeData {
   /** Shortened output preview (first 80 chars). */
   outputPreview?: string;
   description?: string;
-}
+};
 
 export const AgentNode = memo(function AgentNode({
   data,
   selected,
-}: NodeProps<AgentNodeData>) {
+}: NodeProps<Node<AgentNodeData>>) {
   const { label, model, status, isStatic, outputPreview, description } = data;
 
   return (
