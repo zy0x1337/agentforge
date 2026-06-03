@@ -9,7 +9,7 @@ import type { Agent } from "@/types";
 export default function AgentExplorer() {
   const { agents, setAgents, selectedAgent, selectAgent, settings, updateSettings } =
     useAppStore();
-  const { loadAgent } = useEditorStore();
+  const { loadAgent, lastSaved } = useEditorStore();
   const [newName, setNewName]         = useState("");
   const [loadError, setLoadError]     = useState<string | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
@@ -17,6 +17,13 @@ export default function AgentExplorer() {
   useEffect(() => {
     if (selectedAgent?.path) loadAgent(selectedAgent.path);
   }, [selectedAgent?.path, loadAgent]);
+
+  // Reload agents whenever any file is saved so the store stays fresh
+  useEffect(() => {
+    if (!lastSaved || !settings.agentsDir) return;
+    loadAgents(settings.agentsDir).then(setAgents).catch(console.error);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastSaved]);
 
   const openFolder = async () => {
     const dir = await open({ directory: true, multiple: false, title: "Select Agents Folder" });

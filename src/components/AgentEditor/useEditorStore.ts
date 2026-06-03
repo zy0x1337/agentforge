@@ -27,6 +27,7 @@ interface EditorState {
   files: Record<EditorTab, EditorFile | null>;
   activeTab: EditorTab;
   saving: boolean;
+  lastSaved: number;
 
   loadAgent: (agentDir: string) => Promise<void>;
   setContent: (tab: EditorTab, value: string) => void;
@@ -53,6 +54,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   files: { persona: null, prompt: null, workflow: null, tools: null },
   activeTab: "persona",
   saving: false,
+  lastSaved: 0,
 
   loadAgent: async (agentDir) => {
     const tabs: EditorTab[] = ["persona", "prompt", "workflow", "tools"];
@@ -100,6 +102,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       );
       set((s) => ({
         saving: false,
+        lastSaved: Date.now(),
         files: Object.fromEntries(
           Object.entries(s.files).map(([k, v]) => [
             k,
@@ -120,6 +123,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!f) return;
     await writeTextFile(`${agentDir}/${TAB_FILENAME[tab]}`, f.content);
     set((s) => ({
+      lastSaved: Date.now(),
       files: {
         ...s.files,
         [tab]: { ...s.files[tab]!, originalContent: f.content },

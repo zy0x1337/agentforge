@@ -144,18 +144,20 @@ export function FrontmatterPanel() {
       </Field>
 
       <Field label="model">
-        <input
-          className={styles.input}
-          list="fm-models"
+        <select
+          className={styles.select}
           value={str("model")}
           onChange={(e) => update({ model: e.target.value })}
-          placeholder="e.g. llama3:8b"
-        />
-        <datalist id="fm-models">
+        >
+          <option value="">— app default —</option>
           {localModels.map((m) => (
-            <option key={m.name} value={m.name} />
+            <option key={m.name} value={m.name}>{m.name}</option>
           ))}
-        </datalist>
+          {/* Keep custom/uninstalled model visible if already set */}
+          {str("model") && !localModels.some((m) => m.name === str("model")) && (
+            <option value={str("model")}>{str("model")} ⚠ not installed</option>
+          )}
+        </select>
       </Field>
 
       <Field label="context_mode">
