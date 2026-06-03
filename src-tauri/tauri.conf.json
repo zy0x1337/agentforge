@@ -39,13 +39,14 @@
     "shortDescription": "Browse local LLMs and orchestrate agent workflows on Windows",
     "longDescription": "AgentForge lets you browse, download and manage open-source LLMs via Ollama, then build automated multi-agent workflows defined by Markdown files. Agents activate each other, pass context forward, and run sequentially or in parallel — all locally, no cloud required.",
     "copyright": "Copyright © 2026 AgentForge Contributors",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
     "homepage": "https://github.com/zy0x1337/agentforge",
     "category": "DeveloperTool",
     "windows": {
       "nsis": {
         "installMode": "currentUser",
         "displayLanguageSelector": false,
-        "license": "../LICENSE",
         "headerImage": "../assets/installer/nsis-header.bmp",
         "sidebarImage": "../assets/installer/nsis-sidebar.bmp",
         "installerIcon": "icons/icon.ico",
