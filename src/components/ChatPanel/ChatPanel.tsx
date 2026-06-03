@@ -88,10 +88,14 @@ export default function ChatPanel() {
       const agentById = new Map(agents.map((a) => [a.id, a]));
 
       const deps: WorkflowRunnerDeps = {
-        runSingleAgent: async (agentId, inputContext, sig, onChunk) => {
+        runSingleAgent: async (agentId, inputContext, sig, onChunk, overrides) => {
           const agent = agentById.get(agentId);
           if (!agent) throw new Error(`Unknown agent: ${agentId}`);
-          const model = agent.frontmatter.model || settings.defaultModel;
+          // Step-level overrides (from workflow.md) win over the agent's persona.
+          const model =
+            overrides?.model || agent.frontmatter.model || settings.defaultModel;
+          const temperature =
+            overrides?.temperature ?? agent.frontmatter.temperature ?? 0.7;
           const system =
             agent.persona + (agent.prompt ? `\n\n${agent.prompt}` : "");
           const messages: ChatMessage[] = [
@@ -106,7 +110,7 @@ export default function ChatPanel() {
               out += token;
               onChunk(token);
             },
-            agent.frontmatter.temperature ?? 0.7,
+            temperature,
             sig,
             settings.ollamaBaseUrl,
           );
