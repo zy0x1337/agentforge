@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use serde::Serialize;
+use tauri::{Emitter, Manager};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Cancellation registry
@@ -33,7 +33,7 @@ type CancelMap = Arc<Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>
 
 /// Returns true when the Ollama daemon responds on localhost:11434.
 #[tauri::command]
-pub fn check_ollama() -> bool {
+fn check_ollama() -> bool {
     Command::new("curl")
         .args([
             "-s",
@@ -50,7 +50,7 @@ pub fn check_ollama() -> bool {
 
 /// Launches `winget install Ollama.Ollama` in a detached process.
 #[tauri::command]
-pub fn install_ollama() {
+fn install_ollama() {
     let _ = Command::new("winget")
         .args(["install", "-e", "--id", "Ollama.Ollama"])
         .spawn();
@@ -82,7 +82,7 @@ pub struct DownloadProgressEvent {
 /// - Respects a per-download cancellation flag (see `cancel_download`).
 /// - Verifies SHA-256 when `expected_sha256` is non-empty.
 #[tauri::command]
-pub async fn download_gguf(
+async fn download_gguf(
     app: tauri::AppHandle,
     download_id: String,
     url: String,
@@ -91,7 +91,7 @@ pub async fn download_gguf(
     cancel_map: tauri::State<'_, CancelMap>,
 ) -> Result<String, String> {
     use sha2::{Digest, Sha256};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::AtomicBool;
 
     // Register a cancellation flag for this download.
     let flag = Arc::new(AtomicBool::new(false));
@@ -218,7 +218,7 @@ pub async fn download_gguf(
 
 /// Set the cancellation flag for an in-flight download.
 #[tauri::command]
-pub fn cancel_download(
+fn cancel_download(
     download_id: String,
     cancel_map: tauri::State<'_, CancelMap>,
 ) -> Result<(), String> {
@@ -245,7 +245,7 @@ pub struct OllamaImportEvent {
 /// Writes a minimal `Modelfile` to the system temp directory, then
 /// streams `ollama create` stdout/stderr as `ollama://import` events.
 #[tauri::command]
-pub async fn import_gguf_to_ollama(
+async fn import_gguf_to_ollama(
     app: tauri::AppHandle,
     import_id: String,
     model_name: String,
@@ -276,7 +276,7 @@ pub async fn import_gguf_to_ollama(
     let id_err = import_id.clone();
 
     thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().flatten() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let _ = app_out.emit(
                 "ollama://import",
                 OllamaImportEvent {
@@ -289,7 +289,7 @@ pub async fn import_gguf_to_ollama(
         }
     });
     thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().flatten() {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             let _ = app_err.emit(
                 "ollama://import",
                 OllamaImportEvent {
@@ -348,7 +348,7 @@ pub struct ToolDoneEvent {
 }
 
 #[tauri::command]
-pub async fn run_tool_command(
+async fn run_tool_command(
     app: tauri::AppHandle,
     run_id: String,
     command: String,
@@ -394,7 +394,7 @@ pub async fn run_tool_command(
     let app_out = app.clone();
     let run_id_out = run_id.clone();
     thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().flatten() {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
             let _ = app_out.emit(
                 "tool://output",
                 ToolOutputEvent {
@@ -410,7 +410,7 @@ pub async fn run_tool_command(
     let app_err = app.clone();
     let run_id_err = run_id.clone();
     thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().flatten() {
+        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
             let _ = app_err.emit(
                 "tool://output",
                 ToolOutputEvent {
