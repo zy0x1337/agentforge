@@ -24,6 +24,7 @@ export default function ModelManager() {
     updateSettings,
   } = useAppStore();
   const [customModel, setCustomModel] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const pull = async (name: string) => {
     setPullProgress(name, 0);
@@ -37,8 +38,9 @@ export default function ModelManager() {
   };
 
   const remove = async (name: string) => {
-    await deleteModel(name);
+    await deleteModel(name, settings.ollamaBaseUrl);
     setLocalModels(localModels.filter((m) => m.name !== name));
+    setConfirmDelete(null);
   };
 
   const installed = new Set(localModels.map((m) => m.name));
@@ -85,7 +87,29 @@ export default function ModelManager() {
                     >
                       {settings.defaultModel === m.name ? "Default ✓" : "Set default"}
                     </button>
-                    <button onClick={() => remove(m.name)} style={{ fontSize: "var(--text-xs)", color: "var(--error)", padding: "2px var(--space-2)" }}>✕</button>
+                    {confirmDelete === m.name ? (
+                      <>
+                        <button
+                          onClick={() => remove(m.name)}
+                          style={{ fontSize: "var(--text-xs)", color: "var(--error)", padding: "2px var(--space-2)", fontWeight: 600 }}
+                        >
+                          Delete?
+                        </button>
+                        <button
+                          onClick={() => setConfirmDelete(null)}
+                          style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", padding: "2px var(--space-2)" }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmDelete(m.name)}
+                        style={{ fontSize: "var(--text-xs)", color: "var(--error)", padding: "2px var(--space-2)" }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

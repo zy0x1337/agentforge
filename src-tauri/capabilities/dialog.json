@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "dialog",
+  "description": "Allow folder/file picker dialogs",
+  "windows": ["main"],
+  "permissions": [
+    "dialog:allow-open"
+  ]
+}
