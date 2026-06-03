@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "shell-commands",
+  "description": "Allowed shell commands for Ollama integration",
+  "windows": ["main"],
+  "permissions": [
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        { "name": "ollama-check",     "cmd": "ollama",  "args": ["list"] },
+        { "name": "ollama-pull",      "cmd": "ollama",  "args": [{ "validator": ".*" }] },
+        { "name": "ollama-installer", "cmd": "winget",  "args": ["install", "Ollama.Ollama"] }
+      ]
+    }
+  ]
+}

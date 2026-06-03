@@ -68,12 +68,7 @@
       }
     },
     "shell": {
-      "open": true,
-      "scope": [
-        { "name": "ollama-check",     "cmd": "ollama",  "args": ["list"] },
-        { "name": "ollama-pull",      "cmd": "ollama",  "args": [{ "validator": ".*" }] },
-        { "name": "ollama-installer", "cmd": "winget",  "args": ["install", "Ollama.Ollama"] }
-      ]
+      "open": true
     },
     "http": {
       "scope": [
