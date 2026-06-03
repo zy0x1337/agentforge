@@ -132,17 +132,46 @@ export function formatContextBlock(
 const WRITE_FILE_RE =
   /<write_file\s+path="([^"]+)">([\s\S]*?)<\/write_file>/g;
 
-export function parseWriteFileBlocks(output: string): FileWriteOp[] {
+/** Primary format: <write_file path="...">content</write_file> */
+function parseXmlBlocks(output: string): FileWriteOp[] {
   const ops: FileWriteOp[] = [];
   WRITE_FILE_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = WRITE_FILE_RE.exec(output)) !== null) {
-    ops.push({
-      path: match[1],
-      newContent: match[2].replace(/^\n/, ""),
-    });
+    ops.push({ path: match[1], newContent: match[2].replace(/^\n/, "") });
   }
   return ops;
+}
+
+/**
+ * Fallback: detect **path/to/file.ext** followed by a fenced code block.
+ * Matches Windows absolute (C:\...), Unix absolute (/...) and relative paths.
+ */
+const MARKDOWN_FILE_RE =
+  /\*\*((?:[A-Za-z]:[\\/]|\.?[\\/])?[^*\n]+\.[a-zA-Z0-9]+)\*\*[ \t]*\n```[^\n]*\n([\s\S]*?)```/g;
+
+function parseMarkdownBlocks(output: string): FileWriteOp[] {
+  const ops: FileWriteOp[] = [];
+  MARKDOWN_FILE_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MARKDOWN_FILE_RE.exec(output)) !== null) {
+    const path = match[1].trim();
+    ops.push({ path, newContent: match[2] });
+  }
+  return ops;
+}
+
+/**
+ * Parse all proposed file writes from agent output.
+ * Tries XML format first, then falls back to bold-path markdown blocks.
+ * Results are deduplicated by path (XML wins over markdown).
+ */
+export function parseWriteFileBlocks(output: string): FileWriteOp[] {
+  const xmlOps  = parseXmlBlocks(output);
+  const mdOps   = parseMarkdownBlocks(output);
+  const seen    = new Set(xmlOps.map((o) => o.path));
+  const merged  = [...xmlOps, ...mdOps.filter((o) => !seen.has(o.path))];
+  return merged;
 }
 
 // ── Line-level diff ───────────────────────────────────────────────────────────
