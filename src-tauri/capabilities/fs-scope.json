@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "fs-scope",
+  "description": "File system access for agent files and app data",
+  "windows": ["main"],
+  "permissions": [
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
+      "deny": [{ "path": "$HOME/.ssh/**" }]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
+      "deny": [{ "path": "$HOME/.ssh/**" }]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
+      "deny": [{ "path": "$HOME/.ssh/**" }]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [{ "path": "$HOME/**" }, { "path": "$APPDATA/**" }],
+      "deny": [{ "path": "$HOME/.ssh/**" }]
+    }
+  ]
+}

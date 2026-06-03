@@ -61,12 +61,6 @@
     "resources": []
   },
   "plugins": {
-    "fs": {
-      "scope": {
-        "allow": ["$HOME/**", "$APPDATA/**"],
-        "deny": ["$HOME/.ssh/**"]
-      }
-    },
     "shell": {
       "open": true
     },
