@@ -90,13 +90,41 @@ export async function readFolderForContext(folderPath: string): Promise<{
 
 // ── Prompt injection ──────────────────────────────────────────────────────────
 
-/** Build the context block prepended to the user prompt. */
-export function formatContextBlock(files: AttachedFile[]): string {
-  if (files.length === 0) return "";
-  const blocks = files
-    .map((f) => `<file path="${f.path}">\n${f.content}\n</file>`)
-    .join("\n");
-  return `[Attached context — ${files.length} file${files.length !== 1 ? "s" : ""}]\n${blocks}\n[End context]\n\n`;
+/**
+ * Build the context block prepended to the user prompt.
+ * Folders are listed even when empty so the agent knows where to write files.
+ */
+export function formatContextBlock(
+  files: AttachedFile[],
+  folders: string[] = [],
+): string {
+  if (files.length === 0 && folders.length === 0) return "";
+
+  const parts: string[] = [];
+
+  if (folders.length > 0) {
+    const list = folders.map((f) => `  - ${f}`).join("\n");
+    parts.push(
+      `Working directories (use these absolute paths when writing files):\n${list}`,
+    );
+  }
+
+  if (files.length > 0) {
+    const blocks = files
+      .map((f) => `<file path="${f.path}">\n${f.content}\n</file>`)
+      .join("\n");
+    parts.push(blocks);
+  }
+
+  const label =
+    [
+      files.length > 0 ? `${files.length} file${files.length !== 1 ? "s" : ""}` : "",
+      folders.length > 0 ? `${folders.length} folder${folders.length !== 1 ? "s" : ""}` : "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+
+  return `[Attached context — ${label}]\n${parts.join("\n\n")}\n[End context]\n\n`;
 }
 
 // ── Write-file parser ─────────────────────────────────────────────────────────

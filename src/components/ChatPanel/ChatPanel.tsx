@@ -51,8 +51,9 @@ export default function ChatPanel() {
 
   const [input, setInput] = useState("");
   const [runError, setRunError] = useState<string | null>(null);
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
-  const [pendingWrites, setPendingWrites] = useState<FileWriteOp[]>([]);
+  const [attachedFiles, setAttachedFiles]     = useState<AttachedFile[]>([]);
+  const [attachedFolders, setAttachedFolders] = useState<string[]>([]);
+  const [pendingWrites, setPendingWrites]     = useState<FileWriteOp[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -89,6 +90,10 @@ export default function ChatPanel() {
   const attachFolder = async () => {
     const folder = await openDialog({ directory: true, multiple: false });
     if (typeof folder !== "string") return;
+    // Always register the folder path so the agent knows where to write files
+    setAttachedFolders((prev) =>
+      prev.includes(folder) ? prev : [...prev, folder],
+    );
     const { files, skipped } = await readFolderForContext(folder);
     setAttachedFiles((prev) => {
       const existing = new Set(prev.map((f) => f.path));
@@ -100,6 +105,9 @@ export default function ChatPanel() {
   const removeAttached = (path: string) =>
     setAttachedFiles((prev) => prev.filter((f) => f.path !== path));
 
+  const removeFolder = (folder: string) =>
+    setAttachedFolders((prev) => prev.filter((f) => f !== folder));
+
   const run = async () => {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
     const prompt = input.trim();
@@ -108,7 +116,7 @@ export default function ChatPanel() {
 
     // Prepend attached file context to the prompt sent to the workflow.
     // The display prompt (stored in activeRun) stays clean.
-    const contextBlock = formatContextBlock(attachedFiles);
+    const contextBlock = formatContextBlock(attachedFiles, attachedFolders);
     const fullPrompt = contextBlock + prompt;
 
     const runId = crypto.randomUUID();
@@ -377,12 +385,36 @@ export default function ChatPanel() {
         flexDirection: "column",
         gap: "var(--space-2)",
       }}>
-        {/* Attached file chips */}
-        {attachedFiles.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)" }}>
+        {/* Attached folder + file chips */}
+        {(attachedFolders.length > 0 || attachedFiles.length > 0) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-1)", alignItems: "center" }}>
+            {attachedFolders.map((folder) => {
+              const name = folder.replace(/\\/g, "/").split("/").pop() ?? folder;
+              return (
+                <span
+                  key={folder}
+                  title={folder}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "var(--space-1)",
+                    padding: "1px var(--space-2)",
+                    background: "color-mix(in oklab, var(--color-primary) 15%, var(--color-surface-3))",
+                    borderRadius: "var(--radius-full)",
+                    fontSize: "0.65rem",
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--color-primary)",
+                    maxWidth: 200,
+                  }}
+                >
+                  <span style={{ flexShrink: 0 }}>📁</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                  <button onClick={() => removeFolder(folder)} style={{ lineHeight: 1, flexShrink: 0, color: "var(--color-primary)" }} title="Remove">×</button>
+                </span>
+              );
+            })}
             {attachedFiles.map((f) => (
               <span
                 key={f.path}
+                title={f.path}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: "var(--space-1)",
                   padding: "1px var(--space-2)",
@@ -395,15 +427,11 @@ export default function ChatPanel() {
                 }}
               >
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-                <button
-                  onClick={() => removeAttached(f.path)}
-                  style={{ color: "var(--color-text-muted)", lineHeight: 1, flexShrink: 0 }}
-                  title="Remove"
-                >×</button>
+                <button onClick={() => removeAttached(f.path)} style={{ color: "var(--color-text-muted)", lineHeight: 1, flexShrink: 0 }} title="Remove">×</button>
               </span>
             ))}
             <button
-              onClick={() => setAttachedFiles([])}
+              onClick={() => { setAttachedFiles([]); setAttachedFolders([]); }}
               style={{ fontSize: "0.65rem", color: "var(--color-text-muted)", padding: "1px var(--space-2)" }}
             >
               Clear all

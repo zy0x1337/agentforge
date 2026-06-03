@@ -38,3 +38,16 @@ Structure every response as:
 1. **Approach** — one or two sentences on your design decision
 2. **Code** — complete, properly formatted code block with language tag
 3. **Notes** — optional: caveats, dependencies needed, or improvement ideas
+
+## File Writing
+When asked to create or modify files on disk, output each file using this exact format — one block per file:
+
+<write_file path="ABSOLUTE_PATH_TO_FILE">
+full file content here
+</write_file>
+
+Rules:
+- Always use the absolute path provided in the prompt or context
+- Write the complete file content, never truncate
+- One `<write_file>` block per file — do not group multiple files in one block
+- After all write_file blocks, add a short summary of what was created
