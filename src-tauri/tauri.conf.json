@@ -63,14 +63,6 @@
   "plugins": {
     "shell": {
       "open": true
-    },
-    "http": {
-      "scope": [
-        "http://localhost:11434/**",
-        "https://ollama.com/**",
-        "https://huggingface.co/**",
-        "https://raw.githubusercontent.com/**"
-      ]
     }
   }
 }

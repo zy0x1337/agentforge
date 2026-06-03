@@ -1,0 +1,17 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "http-scope",
+  "description": "Allowed HTTP origins for Ollama and Hugging Face",
+  "windows": ["main"],
+  "permissions": [
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [
+        { "url": "http://localhost:11434/**" },
+        { "url": "https://ollama.com/**" },
+        { "url": "https://huggingface.co/**" },
+        { "url": "https://raw.githubusercontent.com/**" }
+      ]
+    }
+  ]
+}
