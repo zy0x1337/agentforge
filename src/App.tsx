@@ -46,8 +46,8 @@ export default function App() {
       const running = await isOllamaRunning(settings.ollamaBaseUrl);
       setOllamaRunning(running);
       if (running) {
-        const models = await listLocalModels(settings.ollamaBaseUrl).catch(() => []);
-        setLocalModels(models);
+        const models = await listLocalModels(settings.ollamaBaseUrl).catch(() => null);
+        if (models !== null) setLocalModels(models);
       }
     };
 

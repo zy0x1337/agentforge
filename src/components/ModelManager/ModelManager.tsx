@@ -38,11 +38,11 @@ export default function ModelManager() {
   const pull = async (name: string) => {
     setPullProgress(name, 0);
     try {
-      await pullModel(name, (_status, pct) => setPullProgress(name, pct ?? 0));
+      await pullModel(name, (_status, pct) => setPullProgress(name, pct ?? 0), undefined, settings.ollamaBaseUrl);
     } finally {
       setPullProgress(null);
-      const fresh = await listLocalModels(settings.ollamaBaseUrl).catch(() => []);
-      setLocalModels(fresh);
+      const fresh = await listLocalModels(settings.ollamaBaseUrl).catch(() => null);
+      if (fresh !== null) setLocalModels(fresh);
     }
   };
 
