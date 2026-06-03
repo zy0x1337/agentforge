@@ -50,6 +50,7 @@
     "@tauri-apps/plugin-shell": "^2",
     "@tauri-apps/plugin-store": "^2",
     "@xyflow/react": "^12",
+    "buffer": "^6.0.3",
     "dagre": "^0.8.5",
     "dompurify": "^3",
     "gray-matter": "^4",

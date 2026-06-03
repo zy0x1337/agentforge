@@ -82,13 +82,17 @@ function parseFrontmatter(raw: string): {
  * Folders missing persona.md are silently skipped.
  */
 export async function loadAgents(agentsDir: string): Promise<Agent[]> {
-  const entries = await readDir(agentsDir);
+  // Normalize: strip trailing slashes so path joins are always clean
+  const base = agentsDir.replace(/[\\/]+$/, "");
+
+  const entries = await readDir(base);
   const agents: Agent[] = [];
 
   for (const entry of entries) {
+    if (!entry.name) continue;              // null name — skip (defensive)
     if (entry.isDirectory === false) continue;
 
-    const dir = `${agentsDir}/${entry.name}`;
+    const dir = `${base}/${entry.name}`;
     const personaRaw = await tryReadFile(dir, REQUIRED_FILE);
 
     if (!personaRaw) {

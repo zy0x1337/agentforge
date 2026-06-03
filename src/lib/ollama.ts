@@ -133,6 +133,10 @@ export async function chatStream(
     body: JSON.stringify({ model, messages, stream: true, options: { temperature } }),
     signal,
   });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText);
+    throw new Error(`Ollama: ${errText}`);
+  }
   if (!res.body) throw new Error("No stream");
 
   const reader = res.body.getReader();

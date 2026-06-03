@@ -40,6 +40,7 @@ export default function ChatPanel() {
   const { runs, activeRunId, setActiveRunId, addRun } = useHistoryStore();
 
   const [input, setInput] = useState("");
+  const [runError, setRunError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   /**
@@ -65,6 +66,7 @@ export default function ChatPanel() {
     if (!input.trim() || isRunning || !settings.defaultModel) return;
     const prompt = input.trim();
     setInput("");
+    setRunError(null);
 
     const runId = crypto.randomUUID();
     const signal = startRun(runId, prompt);
@@ -144,7 +146,8 @@ export default function ChatPanel() {
       const finished = useWorkflowStore.getState().activeRun;
       if (finished) await addRun(finished);
     } catch (err) {
-      console.error("[ChatPanel] workflow error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setRunError(msg);
     } finally {
       finishRun();
     }
@@ -273,6 +276,20 @@ export default function ChatPanel() {
               </div>
             )}
           </>
+        )}
+
+        {runError && (
+          <div style={{
+            padding: "var(--space-3) var(--space-4)",
+            background: "color-mix(in oklab, var(--color-error) 8%, var(--color-surface-2))",
+            border: "1px solid oklch(from var(--color-error) l c h / 0.3)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-error)",
+            fontSize: "var(--text-xs)",
+            fontFamily: "var(--font-mono)",
+          }}>
+            {runError}
+          </div>
         )}
 
         <div ref={bottomRef} />

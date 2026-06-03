@@ -17,6 +17,7 @@ export default function AgentExplorer() {
     useAppStore();
   const { loadAgent } = useEditorStore();
   const [newName, setNewName] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Load agent files into editor whenever selection changes
   useEffect(() => {
@@ -29,8 +30,14 @@ export default function AgentExplorer() {
     const dir = await open({ directory: true, multiple: false, title: "Select Agents Folder" });
     if (typeof dir === "string") {
       updateSettings({ agentsDir: dir });
-      const loaded = await loadAgents(dir).catch(() => []);
-      setAgents(loaded);
+      setLoadError(null);
+      try {
+        const loaded = await loadAgents(dir);
+        setAgents(loaded);
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+        setAgents([]);
+      }
     }
   };
 
@@ -78,6 +85,10 @@ export default function AgentExplorer() {
                 Open Agents Folder
               </button>
             </div>
+          ) : loadError ? (
+            <p style={{ padding: "var(--space-4)", color: "var(--error)", fontSize: "var(--text-xs)", wordBreak: "break-all" }}>
+              Error: {loadError}
+            </p>
           ) : agents.length === 0 ? (
             <p style={{ padding: "var(--space-4)", color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>No agents found. Create one below.</p>
           ) : (
