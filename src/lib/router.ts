@@ -74,7 +74,7 @@ async function semanticMatch(
   embedModel: string,
   baseUrl: string,
   signal?: AbortSignal
-): Promise<Agent | null> {
+): Promise<{ agent: Agent; score: number } | null> {
   // Build (id → embedText) map for batch fetch
   const agentItems = agents.map((a) => ({
     id: a.id,
@@ -113,7 +113,8 @@ async function semanticMatch(
     return null;
   }
 
-  return agents.find((a) => a.id === top.id) ?? null;
+  const agent = agents.find((a) => a.id === top.id);
+  return agent ? { agent, score: top.score } : null;
 }
 
 // ── Tier 3: LLM ───────────────────────────────────────────────────────────────
@@ -163,6 +164,15 @@ export interface RouterOptions {
   signal?: AbortSignal;
 }
 
+/** Result of a routing decision — includes the matched agent and which tier resolved it. */
+export interface RouteResult {
+  agent: Agent;
+  /** Which routing tier made the match. */
+  tier: "keyword" | "semantic" | "llm";
+  /** Cosine similarity score (Tier 2 only). */
+  score?: number;
+}
+
 /**
  * Main router: Tier 1 → Tier 2 → Tier 3.
  *
@@ -174,7 +184,7 @@ export async function routeToAgent(
   agents: Agent[],
   routerModel: string,
   options: RouterOptions = {}
-): Promise<Agent | null> {
+): Promise<RouteResult | null> {
   const {
     baseUrl = "http://localhost:11434",
     embedModel = DEFAULT_EMBED_MODEL,
@@ -190,7 +200,7 @@ export async function routeToAgent(
   const ruleMatch = ruleBasedMatch(prompt, routable);
   if (ruleMatch) {
     console.debug(`[router] Tier 1 match: ${ruleMatch.id}`);
-    return ruleMatch;
+    return { agent: ruleMatch, tier: "keyword" };
   }
 
   // ── Tier 2: Semantic ──────────────────────────────────────────────────────
@@ -204,8 +214,8 @@ export async function routeToAgent(
         signal
       );
       if (semanticResult) {
-        console.debug(`[router] Tier 2 match: ${semanticResult.id}`);
-        return semanticResult;
+        console.debug(`[router] Tier 2 match: ${semanticResult.agent.id} (score=${semanticResult.score.toFixed(3)})`);
+        return { agent: semanticResult.agent, tier: "semantic", score: semanticResult.score };
       }
     } catch (err) {
       // Embed model likely not pulled or Ollama unreachable — soft fail
@@ -221,11 +231,12 @@ export async function routeToAgent(
     return null;
   }
 
-  const llmResult = await llmBasedMatch(prompt, routable, routerModel, signal);
-  if (llmResult) {
-    console.debug(`[router] Tier 3 match: ${llmResult.id}`);
+  const llmAgent = await llmBasedMatch(prompt, routable, routerModel, signal);
+  if (llmAgent) {
+    console.debug(`[router] Tier 3 match: ${llmAgent.id}`);
+    return { agent: llmAgent, tier: "llm" };
   }
-  return llmResult;
+  return null;
 }
 
 /**

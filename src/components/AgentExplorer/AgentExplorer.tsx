@@ -1,17 +1,25 @@
 import { useState, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAppStore } from "@/store/useAppStore";
-import { loadAgents, createAgent, deleteAgent } from "@/lib/agentFs";
+import { loadAgents, createAgent, deleteAgent, type AgentTemplate } from "@/lib/agentFs";
 import { useEditorStore } from "@/components/AgentEditor/useEditorStore";
 import { AgentEditor } from "@/components/AgentEditor/AgentEditor";
 import type { Agent } from "@/types";
+
+const TEMPLATE_OPTIONS: { value: AgentTemplate; label: string; desc: string }[] = [
+  { value: "blank",   label: "Blank",   desc: "Empty scaffold"            },
+  { value: "coder",   label: "Coder",   desc: "Code & file-write focused" },
+  { value: "analyst", label: "Analyst", desc: "Analysis & summarization"  },
+  { value: "router",  label: "Router",  desc: "Routes to other agents"    },
+];
 
 export default function AgentExplorer() {
   const { agents, setAgents, selectedAgent, selectAgent, settings, updateSettings } =
     useAppStore();
   const { loadAgent, lastSaved } = useEditorStore();
-  const [newName, setNewName]         = useState("");
-  const [loadError, setLoadError]     = useState<string | null>(null);
+  const [newName, setNewName]             = useState("");
+  const [template, setTemplate]           = useState<AgentTemplate>("blank");
+  const [loadError, setLoadError]         = useState<string | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
 
   useEffect(() => {
@@ -41,7 +49,7 @@ export default function AgentExplorer() {
 
   const addAgent = async () => {
     if (!newName || !settings.agentsDir) return;
-    await createAgent(settings.agentsDir, newName);
+    await createAgent(settings.agentsDir, newName, template);
     setAgents(await loadAgents(settings.agentsDir));
     setNewName("");
   };
@@ -132,20 +140,44 @@ export default function AgentExplorer() {
               )}
             </div>
 
-            {/* New agent input */}
+            {/* New agent input + template picker */}
             {settings.agentsDir && (
-              <div style={{ padding: "var(--space-3)", borderTop: "1px solid var(--border)", display: "flex", gap: "var(--space-2)" }}>
-                <input
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addAgent()}
-                  placeholder="New agent name…"
-                  style={{ flex: 1, padding: "var(--space-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "var(--text-xs)", color: "var(--text)" }}
-                />
-                <button
-                  onClick={addAgent}
-                  style={{ padding: "var(--space-2) var(--space-3)", background: "var(--primary)", color: "#fff", borderRadius: "var(--radius-sm)", fontSize: "var(--text-xs)" }}
-                >+</button>
+              <div style={{ padding: "var(--space-3)", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+                <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && addAgent()}
+                    placeholder="New agent name…"
+                    style={{ flex: 1, padding: "var(--space-2)", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", fontSize: "var(--text-xs)", color: "var(--text)" }}
+                  />
+                  <button
+                    onClick={addAgent}
+                    style={{ padding: "var(--space-2) var(--space-3)", background: "var(--primary)", color: "#fff", borderRadius: "var(--radius-sm)", fontSize: "var(--text-xs)" }}
+                  >+</button>
+                </div>
+                {/* Template selector */}
+                <div style={{ display: "flex", gap: "var(--space-1)", flexWrap: "wrap" }}>
+                  {TEMPLATE_OPTIONS.map((t) => (
+                    <button
+                      key={t.value}
+                      onClick={() => setTemplate(t.value)}
+                      title={t.desc}
+                      style={{
+                        padding: "2px var(--space-2)",
+                        borderRadius: "var(--radius-full)",
+                        fontSize: "0.65rem",
+                        fontWeight: 500,
+                        border: `1px solid ${template === t.value ? "var(--primary)" : "var(--border)"}`,
+                        background: template === t.value ? "color-mix(in oklab, var(--primary) 14%, var(--surface-3))" : "transparent",
+                        color: template === t.value ? "var(--primary)" : "var(--text-muted)",
+                        transition: "all 120ms ease",
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </>

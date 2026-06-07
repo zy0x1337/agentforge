@@ -52,7 +52,7 @@ describe('routeToAgent', () => {
       MODEL,
       { skipSemantic: true, skipLlm: true },
     );
-    expect(result?.id).toBe('coder');
+    expect(result?.agent.id).toBe('coder');
   });
 
   it('Tier 1: picks highest-scoring agent (most trigger hits)', async () => {
@@ -62,7 +62,7 @@ describe('routeToAgent', () => {
       MODEL,
       { skipSemantic: true, skipLlm: true },
     );
-    expect(result?.id).toBe('reviewer');
+    expect(result?.agent.id).toBe('reviewer');
   });
 
   it('Tier 1: case-insensitive trigger matching', async () => {
@@ -72,7 +72,7 @@ describe('routeToAgent', () => {
       MODEL,
       { skipSemantic: true, skipLlm: true },
     );
-    expect(result?.id).toBe('summarizer');
+    expect(result?.agent.id).toBe('summarizer');
   });
 
   it('Tier 1: returns null when no triggers match', async () => {
@@ -92,7 +92,7 @@ describe('routeToAgent', () => {
       MODEL,
       { skipSemantic: true, skipLlm: true },
     );
-    expect(result?.id).not.toBe('_system');
+    expect(result?.agent.id).not.toBe('_system');
   });
 
   it('returns null for empty agent list', async () => {
@@ -121,7 +121,7 @@ describe('routeToAgent', () => {
       { skipSemantic: true },
     );
     expect(chat).toHaveBeenCalledOnce();
-    expect(result?.id).toBe('coder');
+    expect(result?.agent.id).toBe('coder');
   });
 
   it('skipLlm: returns null when all tiers miss', async () => {

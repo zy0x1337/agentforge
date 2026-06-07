@@ -139,22 +139,10 @@ export async function saveAgentFile(
  * The folder name is derived from a slugified version of `name`.
  * Returns the absolute path of the created agent folder.
  */
-export async function createAgent(
-  agentsDir: string,
-  name: string
-): Promise<string> {
-  const id = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+export type AgentTemplate = "blank" | "coder" | "analyst" | "router";
 
-  if (!id) throw new Error("Invalid agent name");
-
-  const dir = `${agentsDir}/${id}`;
-  await mkdir(dir, { recursive: true });
-
-  const persona = [
+const TEMPLATES: Record<AgentTemplate, (name: string) => string> = {
+  blank: (name) => [
     "---",
     `name: ${name}`,
     "description: ",
@@ -167,9 +155,88 @@ export async function createAgent(
     "",
     `You are ${name}.`,
     "",
-  ].join("\n");
+  ].join("\n"),
 
-  await writeTextFile(`${dir}/${REQUIRED_FILE}`, persona);
+  coder: (name) => [
+    "---",
+    `name: ${name}`,
+    "description: Implements code changes based on requirements",
+    "model: qwen2.5-coder:7b",
+    "temperature: 0.2",
+    "triggers:",
+    "  - code",
+    "  - implement",
+    "  - write",
+    "  - fix",
+    "  - refactor",
+    "next_agents: []",
+    "context_mode: full",
+    "max_tokens: 4096",
+    "---",
+    "",
+    `You are ${name}, an expert software engineer.`,
+    "You write clean, correct, well-structured code.",
+    "When asked to modify files, use the <write_file path=\"...\"> protocol.",
+    "",
+  ].join("\n"),
+
+  analyst: (name) => [
+    "---",
+    `name: ${name}`,
+    "description: Analyzes and summarizes information",
+    "model: llama3.1:8b",
+    "temperature: 0.5",
+    "triggers:",
+    "  - analyze",
+    "  - summarize",
+    "  - explain",
+    "  - review",
+    "next_agents: []",
+    "context_mode: full",
+    "max_tokens: 2048",
+    "---",
+    "",
+    `You are ${name}, a thorough and precise analyst.`,
+    "You provide clear, structured analysis and actionable insights.",
+    "",
+  ].join("\n"),
+
+  router: (name) => [
+    "---",
+    `name: ${name}`,
+    "description: Routes requests to the most appropriate specialist agent",
+    "model: llama3.2:3b",
+    "temperature: 0.1",
+    "triggers: []",
+    "next_agents: []",
+    "context_mode: none",
+    "max_tokens: 256",
+    "---",
+    "",
+    `You are ${name}, a routing agent.`,
+    "Your sole job is to analyze the user's request and decide which specialist should handle it.",
+    "Respond with only the agent id, nothing else.",
+    "",
+  ].join("\n"),
+};
+
+export async function createAgent(
+  agentsDir: string,
+  name: string,
+  template: AgentTemplate = "blank"
+): Promise<string> {
+  const id = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!id) throw new Error("Invalid agent name");
+
+  const dir = `${agentsDir}/${id}`;
+  await mkdir(dir, { recursive: true });
+
+  await writeTextFile(`${dir}/${REQUIRED_FILE}`, TEMPLATES[template](name));
   return dir;
 }
 
