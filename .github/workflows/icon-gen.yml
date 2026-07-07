@@ -44,7 +44,7 @@ jobs:
         run: pnpm tauri icon src-tauri/icons/icon.svg
 
       - name: Commit updated icons
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: 'chore(icons): regenerate raster icons from icon.svg [skip ci]'
           file_pattern: 'src-tauri/icons/*.png src-tauri/icons/*.ico src-tauri/icons/*.icns'
